@@ -65,7 +65,7 @@ export default function Dashboard() {
         </div>
 
         {groups.map((g) => (
-          <div key={g}>
+          <div key={g} className="nav-group">
             <div className="side-group">{g}</div>
             {nav
               .filter((n) => n.group === g)

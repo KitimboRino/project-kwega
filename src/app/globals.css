@@ -96,7 +96,7 @@ body {
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 24px; gap: 16px; flex-wrap: wrap; }
 .page-head h2 { font-family: "Sora"; font-weight: 700; font-size: 27px; letter-spacing: -.7px; }
 .page-head p { color: var(--muted); font-size: 14px; margin-top: 3px; }
-.page-head .actions { display: flex; gap: 10px; }
+.page-head .actions { display: flex; gap: 10px; flex-wrap: wrap; }
 
 /* ---------- Grid ---------- */
 .grid { display: grid; gap: 16px; }
@@ -130,7 +130,7 @@ body {
 
 /* ---------- Panels ---------- */
 .panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; box-shadow: var(--shadow-soft); }
-.panel-head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 4px; }
+.panel-head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 4px; flex-wrap: wrap; gap: 10px; }
 .panel h3 { font-family: "Sora"; font-weight: 600; font-size: 16px; letter-spacing: -.2px; }
 .panel .hint { font-size: 12.5px; color: var(--muted); margin-bottom: 16px; }
 .legend-toggle { display: inline-flex; background: var(--paper); border-radius: 999px; padding: 4px; gap: 2px; }
@@ -240,6 +240,7 @@ tbody tr:hover td { background: var(--paper); }
   .sidebar { width: 100%; height: auto; position: static; flex-direction: row; align-items: center; padding: 12px 16px; overflow-x: auto; gap: 4px; }
   .sidebar .brand { margin-bottom: 0; margin-right: 6px; }
   .sidebar .brand span, .side-search, .side-group, .side-foot .who, .side-foot .role-badge { display: none; }
+  .nav-group { display: flex; flex-direction: row; gap: 4px; } /* group wrapper divs have no layout of their own by default — without this, each group's items stack vertically into their own column instead of joining the horizontal strip */
   .side-foot { margin-top: 0; margin-left: auto; padding-top: 0; border-top: 0; }
   .nav-item { margin-bottom: 0; padding: 9px 11px; white-space: nowrap; }
   .nav-item span, .badge-new { display: none; }
@@ -250,4 +251,18 @@ tbody tr:hover td { background: var(--paper); }
   .stat-strip .cell { border-right: 0; border-bottom: 1px solid var(--line); }
   .chart { gap: 8px; height: 240px; }
   .tbl-wrap { overflow-x: auto; }
+  table { min-width: 560px; } /* scrolls within .tbl-wrap instead of squeezing illegibly */
+}
+
+@media (max-width: 480px) {
+  .login-wrap { padding: 14px; }
+  .login-card { padding: 26px 22px; border-radius: 20px; }
+  .page-head h2 { font-size: 22px; }
+  .panel, .sum-card { padding: 16px; }
+  .sum-card .val { font-size: 24px; }
+  .tbl-top { padding: 14px 16px; }
+  th, td { padding: 11px 14px; }
+  .donut { width: 120px; height: 120px; }
+  .donut .hole { inset: 20px; }
+  .page-head .actions .btn { width: 100%; justify-content: center; }
 }
