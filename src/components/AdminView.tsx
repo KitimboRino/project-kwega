@@ -35,21 +35,27 @@ function mapRow(row: MemberRow): Member {
 
 const BRANCH_COLORS = ["#16a34a", "#4ade80", "#fbbf24", "#fef3c7", "#0ea5e9", "#f472b6"];
 
-// Illustrative placeholder — a real month-by-month chart needs real
-// transaction volume to look meaningful (see plan notes). Not wired to
-// live data yet.
-const FLOW = [
-  { m: "Mar", inc: 62, exp: 26 },
-  { m: "Apr", inc: 88, exp: 40 },
-  { m: "May", inc: 74, exp: 34 },
-  { m: "Jun", inc: 60, exp: 26 },
-  { m: "Jul", inc: 90, exp: 40 },
-  { m: "Aug", inc: 62, exp: 28 },
-];
+type FlowBucket = { key: string; label: string; inc: number; exp: number };
+
+// Last 6 calendar months, oldest first, ending with the current month.
+function emptyFlowBuckets(asOf = new Date()): FlowBucket[] {
+  const buckets: FlowBucket[] = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(asOf.getFullYear(), asOf.getMonth() - i, 1);
+    buckets.push({
+      key: `${d.getFullYear()}-${d.getMonth()}`,
+      label: d.toLocaleDateString("en-US", { month: "short" }),
+      inc: 0,
+      exp: 0,
+    });
+  }
+  return buckets;
+}
 
 export default function AdminView({ tab }: { tab: string }) {
   const supabase = createClient();
   const [members, setMembers] = useState<Member[]>([]);
+  const [flow, setFlow] = useState<FlowBucket[]>(emptyFlowBuckets());
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -59,6 +65,26 @@ export default function AdminView({ tab }: { tab: string }) {
         "id, account_no, branch, principal, interest, start_date, member_profile:profiles!members_id_fkey(name), officer_profile:profiles!members_officer_id_fkey(name)"
       );
     if (data) setMembers((data as unknown as MemberRow[]).map(mapRow));
+
+    const buckets = emptyFlowBuckets();
+    const now = new Date();
+    const rangeStart = new Date(now.getFullYear(), now.getMonth() - 5, 1).toISOString();
+    const { data: txns } = await supabase
+      .from("transactions")
+      .select("type, amount, occurred_at")
+      .gte("occurred_at", rangeStart);
+    if (txns) {
+      for (const t of txns as { type: string; amount: number; occurred_at: string }[]) {
+        const d = new Date(t.occurred_at);
+        const key = `${d.getFullYear()}-${d.getMonth()}`;
+        const bucket = buckets.find((b) => b.key === key);
+        if (!bucket) continue;
+        if (t.type === "withdrawal") bucket.exp += Math.abs(t.amount);
+        else bucket.inc += t.amount;
+      }
+    }
+    setFlow(buckets);
+
     setLoading(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supabase]);
@@ -80,6 +106,9 @@ export default function AdminView({ tab }: { tab: string }) {
       color: BRANCH_COLORS[i % BRANCH_COLORS.length],
     }))
     .sort((a, b) => b.amt - a.amt);
+
+  const maxFlow = Math.max(1, ...flow.flatMap((f) => [f.inc, f.exp]));
+  const hasFlow = flow.some((f) => f.inc > 0 || f.exp > 0);
 
   let acc = 0;
   const stops = CATS.length
@@ -151,7 +180,7 @@ export default function AdminView({ tab }: { tab: string }) {
               <div className="panel-head">
                 <div>
                   <h3>Cash flow</h3>
-                  <p className="hint">Contributions vs payouts over time · illustrative, not live yet</p>
+                  <p className="hint">Contributions vs payouts · last 6 months</p>
                 </div>
                 <div className="legend-toggle">
                   <span><i className="dot g" /> Income</span>
@@ -160,20 +189,21 @@ export default function AdminView({ tab }: { tab: string }) {
                 </div>
               </div>
               <div className="chart">
-                {FLOW.map((f) => (
-                  <div className="col" key={f.m}>
+                {flow.map((f) => (
+                  <div className="col" key={f.key}>
                     <div className="pair">
-                      <div className="bar inc" style={{ height: `${f.inc}%` }}>
-                        <span>{f.inc}%</span>
+                      <div className="bar inc" style={{ height: `${Math.round((f.inc / maxFlow) * 100)}%` }}>
+                        <span>{fmt(f.inc)}</span>
                       </div>
-                      <div className="bar exp" style={{ height: `${f.exp}%` }}>
-                        <span>{f.exp}%</span>
+                      <div className="bar exp" style={{ height: `${Math.round((f.exp / maxFlow) * 100)}%` }}>
+                        <span>{fmt(f.exp)}</span>
                       </div>
                     </div>
-                    <div className="xlabel">{f.m}</div>
+                    <div className="xlabel">{f.label}</div>
                   </div>
                 ))}
               </div>
+              {!hasFlow && <p className="hint" style={{ marginTop: 10 }}>No contributions or withdrawals in the last 6 months yet.</p>}
             </div>
 
             <div className="panel">

@@ -76,6 +76,6 @@ supabase/
 
 - **Contribution self-service**: members currently can't log their own deposits (by design — contributions are collected in person and logged by the officer). The "Add contribution" button is decorative.
 - **Withdrawals** always withdraw the full available balance (no partial-amount input yet) — the `request_withdrawal` RPC already supports partial amounts, so this is a small UI addition.
-- **Admin cash-flow chart** is still illustrative placeholder data — a real version needs enough transaction volume to be meaningful.
+- **Admin cash-flow chart** is now live (real `transactions` grouped by month, last 6 months) — it'll look sparse until there's real transaction volume, which is expected, not a bug.
 - **Trend badges** (e.g. "+12%") were removed rather than left fake — true period-over-period trends need a snapshot table.
 - **Interest accrual** (`projectInterest` in `src/lib/data.ts`) is not yet scheduled — it's the natural hook for a future monthly cron/Edge Function that credits interest automatically.
