@@ -2,49 +2,95 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { DEMO_USERS, Role, User } from "@/lib/data";
+import { createClient } from "@/lib/supabase/client";
+import type { Role, User } from "@/lib/data";
 
 interface AuthState {
   user: User | null;
   loading: boolean;
-  login: (role: Role) => void;
-  logout: () => void;
+  signIn: (email: string, password: string) => Promise<{ error?: string }>;
+  signUp: (email: string, password: string, name: string) => Promise<{ error?: string }>;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | undefined>(undefined);
-const STORAGE_KEY = "kwega.session";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
+  const supabase = createClient();
 
-  // Restore session on mount
   useEffect(() => {
-    try {
-      const raw = sessionStorage.getItem(STORAGE_KEY);
-      if (raw) setUser(JSON.parse(raw));
-    } catch {
-      /* ignore */
-    }
-    setLoading(false);
+    const loadUser = async (authUser: { id: string; email?: string } | null | undefined) => {
+      if (!authUser) {
+        setUser(null);
+        setLoading(false);
+        return;
+      }
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("name, role, branch")
+        .eq("id", authUser.id)
+        .single();
+
+      let accountNo: string | undefined;
+      if (profile?.role === "member") {
+        const { data: member } = await supabase
+          .from("members")
+          .select("account_no")
+          .eq("id", authUser.id)
+          .maybeSingle();
+        accountNo = member?.account_no;
+      }
+
+      setUser({
+        id: authUser.id,
+        name: profile?.name ?? authUser.email ?? "Unknown",
+        role: (profile?.role as Role) ?? "member",
+        accountNo,
+        branch: profile?.branch ?? undefined,
+      });
+      setLoading(false);
+    };
+
+    supabase.auth.getUser().then(({ data }) => loadUser(data.user));
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      loadUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const login = (role: Role) => {
-    const u = DEMO_USERS[role];
-    setUser(u);
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(u));
+  const signIn = async (email: string, password: string) => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) return { error: error.message };
     router.push("/dashboard");
+    return {};
   };
 
-  const logout = () => {
-    setUser(null);
-    sessionStorage.removeItem(STORAGE_KEY);
+  const signUp = async (email: string, password: string, name: string) => {
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { name } },
+    });
+    if (error) return { error: error.message };
+    return {};
+  };
+
+  const logout = async () => {
+    await supabase.auth.signOut();
     router.push("/");
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, signIn, signUp, logout }}>
       {children}
     </AuthContext.Provider>
   );

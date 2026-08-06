@@ -1,23 +1,171 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { MEMBERS, RULES, fmt } from "@/lib/data";
+import { createClient } from "@/lib/supabase/client";
+import { RULES, fmt, isLocked, type Member } from "@/lib/data";
 import { Icon } from "@/components/Icons";
+
+type MemberRow = {
+  id: string;
+  account_no: string;
+  branch: string;
+  principal: number;
+  interest: number;
+  daily_amount: number;
+  start_date: string;
+  profiles: { name: string; phone: string | null } | null;
+};
+
+function mapRow(row: MemberRow, officerName: string): Member {
+  return {
+    id: row.id,
+    name: row.profiles?.name ?? "Unknown",
+    accountNo: row.account_no,
+    phone: row.profiles?.phone ?? "",
+    officer: officerName,
+    branch: row.branch,
+    status: isLocked(row.start_date) ? "locked" : "active",
+    principal: row.principal,
+    interest: row.interest,
+    dailyAmount: row.daily_amount,
+    startDate: row.start_date,
+    transactions: [],
+  };
+}
+
+type LoggedEntry = { id: string; memberName: string; accountNo: string; amount: number };
 
 export default function OfficerView({ tab }: { tab: string }) {
   const { user } = useAuth();
-  const myMembers = MEMBERS.filter((m) => m.officer === user?.name);
-  const [daily, setDaily] = useState("2,000");
-  const [notice, setNotice] = useState("");
+  const supabase = createClient();
 
-  const handleCreate = () => {
+  const [myMembers, setMyMembers] = useState<Member[]>([]);
+  const [branches, setBranches] = useState<string[]>([]);
+  const [loggedToday, setLoggedToday] = useState<LoggedEntry[]>([]);
+
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [nationalId, setNationalId] = useState("");
+  const [daily, setDaily] = useState("2,000");
+  const [branch, setBranch] = useState("");
+  const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10));
+  const [notice, setNotice] = useState("");
+  const [creating, setCreating] = useState(false);
+
+  const [search, setSearch] = useState("");
+  const [depositAmount, setDepositAmount] = useState("2,000");
+  const [selectedMemberId, setSelectedMemberId] = useState("");
+  const [loggingDeposit, setLoggingDeposit] = useState(false);
+  const [depositNotice, setDepositNotice] = useState("");
+
+  const loadMembers = useCallback(async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from("members")
+      .select("id, account_no, branch, principal, interest, daily_amount, start_date, profiles!members_id_fkey(name, phone)")
+      .eq("officer_id", user.id);
+    if (data) setMyMembers((data as unknown as MemberRow[]).map((r) => mapRow(r, user.name)));
+  }, [user, supabase]);
+
+  const loadLoggedToday = useCallback(async () => {
+    if (!user) return;
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const { data } = await supabase
+      .from("transactions")
+      .select("id, amount, members(account_no, profiles!members_id_fkey(name))")
+      .eq("created_by", user.id)
+      .eq("type", "deposit")
+      .gte("occurred_at", startOfDay.toISOString())
+      .order("occurred_at", { ascending: false });
+    if (data) {
+      setLoggedToday(
+        (data as unknown as { id: string; amount: number; members: { account_no: string; profiles: { name: string } | null } | null }[]).map((r) => ({
+          id: r.id,
+          amount: r.amount,
+          accountNo: r.members?.account_no ?? "",
+          memberName: r.members?.profiles?.name ?? "",
+        }))
+      );
+    }
+  }, [user, supabase]);
+
+  const loadBranches = useCallback(async () => {
+    const { data } = await supabase.from("branches").select("name").order("name");
+    if (data) {
+      setBranches(data.map((b) => b.name));
+      if (data.length && !branch) setBranch(data[0].name);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supabase]);
+
+  useEffect(() => {
+    loadMembers();
+    loadLoggedToday();
+    loadBranches();
+  }, [loadMembers, loadLoggedToday, loadBranches]);
+
+  const handleCreate = async () => {
     const val = Number(daily.replace(/,/g, ""));
     if (val < RULES.MIN_DAILY) {
       setNotice(`Daily amount must be at least ${fmt(RULES.MIN_DAILY)} Ushs.`);
       return;
     }
-    setNotice("Account created. The member can now sign in to view it.");
+    if (!name || !email || !branch) {
+      setNotice("Full name, email, and branch are required.");
+      return;
+    }
+    setCreating(true);
+    setNotice("");
+    const { data, error } = await supabase.functions.invoke("create-member", {
+      body: { email, name, phone, nationalId, dailyAmount: val, branch, startDate },
+    });
+    setCreating(false);
+    if (error || data?.error) {
+      setNotice(data?.error ?? error?.message ?? "Could not create account.");
+      return;
+    }
+    setNotice("Account created. The member has been emailed an invite to sign in.");
+    setName("");
+    setEmail("");
+    setPhone("");
+    setNationalId("");
+    setDaily("2,000");
+    loadMembers();
+  };
+
+  const filteredMembers = myMembers.filter(
+    (m) =>
+      !search ||
+      m.name.toLowerCase().includes(search.toLowerCase()) ||
+      m.accountNo.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const handleLogDeposit = async () => {
+    const val = Number(depositAmount.replace(/,/g, ""));
+    if (!selectedMemberId) {
+      setDepositNotice("Pick a member first.");
+      return;
+    }
+    if (val <= 0) {
+      setDepositNotice("Enter a valid amount.");
+      return;
+    }
+    setLoggingDeposit(true);
+    setDepositNotice("");
+    const { error } = await supabase.rpc("log_deposit", { p_member_id: selectedMemberId, p_amount: val });
+    setLoggingDeposit(false);
+    if (error) {
+      setDepositNotice(error.message);
+      return;
+    }
+    setDepositNotice("Deposit logged.");
+    setSelectedMemberId("");
+    setSearch("");
+    loadMembers();
+    loadLoggedToday();
   };
 
   return (
@@ -40,7 +188,7 @@ export default function OfficerView({ tab }: { tab: string }) {
               <div className="lbl">Accounts opened</div>
               <div className="dots">···</div>
             </div>
-            <div className="val">{myMembers.length} <span className="delta up">+{myMembers.length}</span></div>
+            <div className="val">{myMembers.length}</div>
             <div className="cur">you manage</div>
           </div>
           <div className="sum-card">
@@ -49,17 +197,17 @@ export default function OfficerView({ tab }: { tab: string }) {
               <div className="lbl">Contributions logged</div>
               <div className="dots">···</div>
             </div>
-            <div className="val">312</div>
+            <div className="val">{loggedToday.length}</div>
             <div className="cur">across members today</div>
           </div>
           <div className="sum-card dark">
             <div className="row1">
               <div className="tile">{Icon.list}</div>
-              <div className="lbl">Pending sign-ups</div>
+              <div className="lbl">Total under management</div>
               <div className="dots">···</div>
             </div>
-            <div className="val">3</div>
-            <div className="cur">awaiting verification</div>
+            <div className="val">{fmt(myMembers.reduce((s, m) => s + m.principal + m.interest, 0))}</div>
+            <div className="cur">Ushs</div>
           </div>
         </div>
       )}
@@ -68,27 +216,37 @@ export default function OfficerView({ tab }: { tab: string }) {
         <div className="grid g2 section-gap">
           <div className="panel">
             <h3>Open a new account</h3>
-            <p className="hint">Members can only view their own account after registration.</p>
+            <p className="hint">The member will be emailed an invite to set their own password and sign in.</p>
             <div className="form-row">
-              <div className="field"><label>Full name</label><input placeholder="e.g. Grace Nakato" /></div>
-              <div className="field"><label>Phone number</label><input placeholder="+256 7XX XXX XXX" /></div>
+              <div className="field"><label>Full name</label><input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Grace Nakato" /></div>
+              <div className="field"><label>Email</label><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="member@example.com" /></div>
             </div>
             <div className="form-row">
-              <div className="field"><label>National ID</label><input placeholder="CM..." /></div>
+              <div className="field"><label>Phone number</label><input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+256 7XX XXX XXX" /></div>
+              <div className="field"><label>National ID</label><input value={nationalId} onChange={(e) => setNationalId(e.target.value)} placeholder="CM..." /></div>
+            </div>
+            <div className="form-row">
               <div className="field">
                 <label>Daily amount (min {fmt(RULES.MIN_DAILY)})</label>
                 <input className="mono" value={daily} onChange={(e) => setDaily(e.target.value)} />
               </div>
-            </div>
-            <div className="form-row">
               <div className="field">
                 <label>Branch</label>
-                <select><option>Kampala Central</option><option>Nakawa</option><option>Entebbe</option></select>
+                <select value={branch} onChange={(e) => setBranch(e.target.value)}>
+                  {branches.map((b) => <option key={b} value={b}>{b}</option>)}
+                </select>
               </div>
-              <div className="field"><label>Start date</label><input type="date" defaultValue="2026-07-28" /></div>
             </div>
-            <button className="btn btn-primary" style={{ width: "100%", justifyContent: "center" }} onClick={handleCreate}>
-              {Icon.plus} Create account
+            <div className="form-row">
+              <div className="field"><label>Start date</label><input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} /></div>
+            </div>
+            <button
+              className="btn btn-primary"
+              style={{ width: "100%", justifyContent: "center" }}
+              onClick={handleCreate}
+              disabled={creating}
+            >
+              {Icon.plus} {creating ? "Creating…" : "Create account"}
             </button>
             {notice && (
               <p style={{ fontSize: 12.5, marginTop: 12, color: "var(--forest)", fontWeight: 600 }}>{notice}</p>
@@ -99,22 +257,57 @@ export default function OfficerView({ tab }: { tab: string }) {
             <h3>Quick log contribution</h3>
             <p className="hint">Record a daily deposit against a member&apos;s account.</p>
             <div className="field" style={{ marginBottom: 14 }}>
-              <label>Find member</label><input placeholder="Search name or account #" />
+              <label>Find member</label>
+              <input
+                placeholder="Search name or account #"
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); setSelectedMemberId(""); }}
+              />
+              {search && !selectedMemberId && (
+                <div style={{ marginTop: 6, border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden" }}>
+                  {filteredMembers.slice(0, 5).map((m) => (
+                    <div
+                      key={m.id}
+                      style={{ padding: "8px 12px", fontSize: 13, cursor: "pointer" }}
+                      onClick={() => { setSelectedMemberId(m.id); setSearch(`${m.name} · ${m.accountNo}`); }}
+                    >
+                      {m.name} · {m.accountNo}
+                    </div>
+                  ))}
+                  {filteredMembers.length === 0 && (
+                    <div style={{ padding: "8px 12px", fontSize: 13, color: "var(--muted)" }}>No matches</div>
+                  )}
+                </div>
+              )}
             </div>
             <div className="field" style={{ marginBottom: 14 }}>
-              <label>Amount</label><input className="mono" defaultValue="2,000" />
+              <label>Amount</label>
+              <input className="mono" value={depositAmount} onChange={(e) => setDepositAmount(e.target.value)} />
             </div>
-            <button className="btn btn-lime" style={{ width: "100%", justifyContent: "center" }}>Log deposit</button>
+            <button
+              className="btn btn-lime"
+              style={{ width: "100%", justifyContent: "center" }}
+              onClick={handleLogDeposit}
+              disabled={loggingDeposit}
+            >
+              {loggingDeposit ? "Logging…" : "Log deposit"}
+            </button>
+            {depositNotice && (
+              <p style={{ fontSize: 12.5, marginTop: 12, color: "var(--forest)", fontWeight: 600 }}>{depositNotice}</p>
+            )}
             <div style={{ marginTop: 20, borderTop: "1px solid var(--line)", paddingTop: 16 }}>
               <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".5px", color: "var(--muted)", marginBottom: 10 }}>
                 Logged today
               </div>
-              {myMembers.slice(0, 3).map((m) => (
-                <div key={m.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "7px 0" }}>
-                  <span>{m.name} · {m.accountNo}</span>
-                  <span className="mono" style={{ color: "var(--forest)" }}>+{fmt(m.dailyAmount)}</span>
+              {loggedToday.slice(0, 5).map((l) => (
+                <div key={l.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "7px 0" }}>
+                  <span>{l.memberName} · {l.accountNo}</span>
+                  <span className="mono" style={{ color: "var(--forest)" }}>+{fmt(l.amount)}</span>
                 </div>
               ))}
+              {loggedToday.length === 0 && (
+                <p style={{ fontSize: 12.5, color: "var(--muted)" }}>Nothing logged yet today.</p>
+              )}
             </div>
           </div>
         </div>
@@ -146,6 +339,13 @@ export default function OfficerView({ tab }: { tab: string }) {
                   <td className="num">{fmt(m.dailyAmount)}</td>
                 </tr>
               ))}
+              {myMembers.length === 0 && (
+                <tr>
+                  <td colSpan={5} style={{ textAlign: "center", color: "var(--muted)", padding: "24px 0" }}>
+                    No accounts yet.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

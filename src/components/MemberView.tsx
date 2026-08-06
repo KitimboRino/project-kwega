@@ -1,12 +1,102 @@
 "use client";
 
+import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { MEMBERS, fmt, isLocked, unlockDate } from "@/lib/data";
+import { createClient } from "@/lib/supabase/client";
+import { fmt, isLocked, unlockDate, type Member } from "@/lib/data";
 import { Icon } from "@/components/Icons";
+
+type MemberRow = {
+  account_no: string;
+  principal: number;
+  interest: number;
+  daily_amount: number;
+  start_date: string;
+  profiles: { name: string; phone: string | null } | null;
+  transactions: { id: string; type: string; amount: number; balance: number; occurred_at: string }[];
+};
+
+function mapRow(row: MemberRow, fallbackName: string): Member {
+  return {
+    id: "",
+    name: row.profiles?.name ?? fallbackName,
+    accountNo: row.account_no,
+    phone: row.profiles?.phone ?? "",
+    officer: "",
+    branch: "",
+    status: isLocked(row.start_date) ? "locked" : "active",
+    principal: row.principal,
+    interest: row.interest,
+    dailyAmount: row.daily_amount,
+    startDate: row.start_date,
+    transactions: row.transactions
+      .slice()
+      .sort((a, b) => +new Date(b.occurred_at) - +new Date(a.occurred_at))
+      .map((t) => ({
+        date: new Date(t.occurred_at).toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }),
+        type: t.type as "deposit" | "interest" | "withdrawal",
+        amount: t.amount,
+        balance: t.balance,
+      })),
+  };
+}
 
 export default function MemberView({ tab }: { tab: string }) {
   const { user } = useAuth();
-  const me = MEMBERS.find((m) => m.id === user?.id) ?? MEMBERS[0];
+  const supabase = createClient();
+  const [me, setMe] = useState<Member | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    if (!user) return;
+    const { data, error: err } = await supabase
+      .from("members")
+      .select("account_no, principal, interest, daily_amount, start_date, profiles!members_id_fkey(name, phone), transactions(*)")
+      .eq("id", user.id)
+      .maybeSingle();
+    if (err) {
+      setError(err.message);
+    } else if (data) {
+      setMe(mapRow(data as unknown as MemberRow, user.name));
+    }
+    setLoading(false);
+  }, [user, supabase]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const withdraw = async (kind: "interest" | "principal", amount: number) => {
+    if (!user || amount <= 0) return;
+    if (!window.confirm(`Withdraw ${fmt(amount)} Ushs of ${kind}?`)) return;
+    setBusy(true);
+    setError("");
+    const { error: err } = await supabase.rpc("request_withdrawal", {
+      p_member_id: user.id,
+      p_kind: kind,
+      p_amount: amount,
+    });
+    setBusy(false);
+    if (err) setError(err.message);
+    else load();
+  };
+
+  if (loading) return <div style={{ padding: 40, color: "var(--muted)" }}>Loading…</div>;
+  if (error && !me) return <div style={{ padding: 40, color: "var(--danger)" }}>{error}</div>;
+  if (!me) {
+    return (
+      <div className="panel" style={{ maxWidth: 480, margin: "40px auto", textAlign: "center" }}>
+        <h3>No savings account yet</h3>
+        <p className="hint">
+          Your login works, but a savings officer hasn&apos;t opened your account yet. Visit a branch or
+          contact your officer to get started — your balance and activity will show up here once they do.
+        </p>
+      </div>
+    );
+  }
+
   const balance = me.principal + me.interest;
   const locked = isLocked(me.startDate);
   const unlock = unlockDate(me.startDate).toLocaleDateString("en-US", {
@@ -30,9 +120,15 @@ export default function MemberView({ tab }: { tab: string }) {
           </p>
         </div>
         <div className="actions">
-          <button className="btn btn-primary">{Icon.plus} Add contribution</button>
+          <button className="btn btn-primary" disabled title="Contributions are logged by your savings officer">
+            {Icon.plus} Add contribution
+          </button>
         </div>
       </div>
+
+      {error && (
+        <p style={{ fontSize: 12.5, marginBottom: 14, color: "var(--danger)", fontWeight: 600 }}>{error}</p>
+      )}
 
       {(tab === "home" || tab === "withdraw" || tab === "activity") && (
         <div className="grid g4">
@@ -97,7 +193,9 @@ export default function MemberView({ tab }: { tab: string }) {
               <span>22 of 30 days</span>
             </div>
             <div style={{ marginTop: 18, display: "flex", gap: 10 }}>
-              <button className="btn btn-primary">{Icon.plus} Add contribution</button>
+              <button className="btn btn-primary" disabled title="Contributions are logged by your savings officer">
+                {Icon.plus} Add contribution
+              </button>
               <button className="btn btn-ghost">View schedule</button>
             </div>
           </div>
@@ -109,14 +207,24 @@ export default function MemberView({ tab }: { tab: string }) {
               <div className="split-box">
                 <div className="k">Interest</div>
                 <div className="v" style={{ color: "var(--forest)" }}>{fmt(me.interest)}</div>
-                <button className="btn btn-lime" style={{ width: "100%", justifyContent: "center" }}>
+                <button
+                  className="btn btn-lime"
+                  style={{ width: "100%", justifyContent: "center" }}
+                  disabled={busy || me.interest <= 0}
+                  onClick={() => withdraw("interest", me.interest)}
+                >
                   Withdraw
                 </button>
               </div>
               <div className="split-box locked">
                 <div className="k">Principal</div>
                 <div className="v">{fmt(me.principal)}</div>
-                <button className="btn btn-ghost" disabled={locked} style={{ width: "100%", justifyContent: "center" }}>
+                <button
+                  className="btn btn-ghost"
+                  disabled={locked || busy || me.principal <= 0}
+                  style={{ width: "100%", justifyContent: "center" }}
+                  onClick={() => withdraw("principal", me.principal)}
+                >
                   {locked ? "Locked" : "Withdraw"}
                 </button>
               </div>
@@ -159,6 +267,13 @@ export default function MemberView({ tab }: { tab: string }) {
                   <td className="num">{fmt(t.balance)}</td>
                 </tr>
               ))}
+              {me.transactions.length === 0 && (
+                <tr>
+                  <td colSpan={4} style={{ textAlign: "center", color: "var(--muted)", padding: "24px 0" }}>
+                    No activity yet.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

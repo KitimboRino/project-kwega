@@ -1,9 +1,43 @@
 "use client";
 
-import { MEMBERS, BRANCHES, fmt } from "@/lib/data";
+import { useCallback, useEffect, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
+import { fmt, isLocked, type Member } from "@/lib/data";
 import { Icon } from "@/components/Icons";
 
-// Income = deposits in, Expense = withdrawals/payouts — modeled per month
+type MemberRow = {
+  id: string;
+  account_no: string;
+  branch: string;
+  principal: number;
+  interest: number;
+  start_date: string;
+  member_profile: { name: string } | null;
+  officer_profile: { name: string } | null;
+};
+
+function mapRow(row: MemberRow): Member {
+  return {
+    id: row.id,
+    name: row.member_profile?.name ?? "Unknown",
+    accountNo: row.account_no,
+    phone: "",
+    officer: row.officer_profile?.name ?? "Unassigned",
+    branch: row.branch,
+    status: isLocked(row.start_date) ? "locked" : "active",
+    principal: row.principal,
+    interest: row.interest,
+    dailyAmount: 0,
+    startDate: row.start_date,
+    transactions: [],
+  };
+}
+
+const BRANCH_COLORS = ["#16a34a", "#4ade80", "#fbbf24", "#fef3c7", "#0ea5e9", "#f472b6"];
+
+// Illustrative placeholder — a real month-by-month chart needs real
+// transaction volume to look meaningful (see plan notes). Not wired to
+// live data yet.
 const FLOW = [
   { m: "Mar", inc: 62, exp: 26 },
   { m: "Apr", inc: 88, exp: 40 },
@@ -13,24 +47,50 @@ const FLOW = [
   { m: "Aug", inc: 62, exp: 28 },
 ];
 
-const CATS = [
-  { name: "Kampala Central", pct: 41, color: "#16a34a", amt: "128.2M" },
-  { name: "Nakawa", pct: 24, color: "#4ade80", amt: "74.0M" },
-  { name: "Entebbe", pct: 20, color: "#fbbf24", amt: "61.5M" },
-  { name: "Jinja", pct: 15, color: "#fef3c7", amt: "48.7M" },
-];
-
 export default function AdminView({ tab }: { tab: string }) {
-  const totalFunds = MEMBERS.reduce((s, m) => s + m.principal + m.interest, 0);
-  const totalInterest = MEMBERS.reduce((s, m) => s + m.interest, 0);
+  const supabase = createClient();
+  const [members, setMembers] = useState<Member[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // build conic-gradient for donut
+  const load = useCallback(async () => {
+    const { data } = await supabase
+      .from("members")
+      .select(
+        "id, account_no, branch, principal, interest, start_date, member_profile:profiles!members_id_fkey(name), officer_profile:profiles!members_officer_id_fkey(name)"
+      );
+    if (data) setMembers((data as unknown as MemberRow[]).map(mapRow));
+    setLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supabase]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const totalFunds = members.reduce((s, m) => s + m.principal + m.interest, 0);
+  const totalInterest = members.reduce((s, m) => s + m.interest, 0);
+
+  const byBranch = new Map<string, number>();
+  for (const m of members) byBranch.set(m.branch, (byBranch.get(m.branch) ?? 0) + m.principal + m.interest);
+  const CATS = Array.from(byBranch.entries())
+    .map(([name, amt], i) => ({
+      name,
+      amt,
+      pct: totalFunds > 0 ? Math.round((amt / totalFunds) * 100) : 0,
+      color: BRANCH_COLORS[i % BRANCH_COLORS.length],
+    }))
+    .sort((a, b) => b.amt - a.amt);
+
   let acc = 0;
-  const stops = CATS.map((c) => {
-    const start = acc;
-    acc += c.pct;
-    return `${c.color} ${start}% ${acc}%`;
-  }).join(", ");
+  const stops = CATS.length
+    ? CATS.map((c) => {
+        const start = acc;
+        acc += c.pct;
+        return `${c.color} ${start}% ${acc}%`;
+      }).join(", ")
+    : "var(--line) 0% 100%";
+
+  if (loading) return <div style={{ padding: 40, color: "var(--muted)" }}>Loading…</div>;
 
   return (
     <>
@@ -54,35 +114,35 @@ export default function AdminView({ tab }: { tab: string }) {
                 <div className="lbl">Total funds</div>
                 <div className="dots">···</div>
               </div>
-              <div className="val">312.4M <span className="delta up">+12.4%</span></div>
+              <div className="val">{fmt(totalFunds)}</div>
               <div className="cur">Ushs · all branches</div>
             </div>
             <div className="sum-card">
               <div className="row1">
                 <div className="tile">{Icon.expense}</div>
-                <div className="lbl">Interest paid</div>
+                <div className="lbl">Interest accrued</div>
                 <div className="dots">···</div>
               </div>
-              <div className="val">21.8M <span className="delta down">−3.8%</span></div>
-              <div className="cur">this cycle</div>
+              <div className="val">{fmt(totalInterest)}</div>
+              <div className="cur">across all members</div>
             </div>
             <div className="sum-card dark">
               <div className="row1">
                 <div className="tile">{Icon.chart}</div>
-                <div className="lbl">Net growth</div>
+                <div className="lbl">Principal saved</div>
                 <div className="dots">···</div>
               </div>
-              <div className="val">290.6M <span className="delta up">+22.1%</span></div>
-              <div className="cur">funds minus payouts</div>
+              <div className="val">{fmt(totalFunds - totalInterest)}</div>
+              <div className="cur">funds minus interest</div>
             </div>
             <div className="sum-card">
               <div className="row1">
                 <div className="tile">{Icon.users}</div>
-                <div className="lbl">Active members</div>
+                <div className="lbl">Total members</div>
                 <div className="dots">···</div>
               </div>
-              <div className="val">1,284 <span className="delta up">+48</span></div>
-              <div className="cur">across 5 branches</div>
+              <div className="val">{members.length}</div>
+              <div className="cur">across {CATS.length} branches</div>
             </div>
           </div>
 
@@ -91,7 +151,7 @@ export default function AdminView({ tab }: { tab: string }) {
               <div className="panel-head">
                 <div>
                   <h3>Cash flow</h3>
-                  <p className="hint">Contributions vs payouts over time</p>
+                  <p className="hint">Contributions vs payouts over time · illustrative, not live yet</p>
                 </div>
                 <div className="legend-toggle">
                   <span><i className="dot g" /> Income</span>
@@ -114,12 +174,6 @@ export default function AdminView({ tab }: { tab: string }) {
                   </div>
                 ))}
               </div>
-              <div className="stat-strip">
-                <div className="cell"><div className="k"><i className="dot g" /> Avg intake</div><div className="v">47.3M</div></div>
-                <div className="cell"><div className="k"><i className="dot r" /> Avg payout</div><div className="v">27.1M</div></div>
-                <div className="cell"><div className="k">Best month</div><div className="v">Jul · 90M</div></div>
-                <div className="cell"><div className="k">Highest intake</div><div className="v">55.0M</div></div>
-              </div>
             </div>
 
             <div className="panel">
@@ -129,7 +183,7 @@ export default function AdminView({ tab }: { tab: string }) {
                 <div className="donut" style={{ background: `conic-gradient(${stops})` }}>
                   <div className="hole">
                     <div>
-                      <b>312M</b>
+                      <b>{fmt(totalFunds)}</b>
                       <small>total</small>
                     </div>
                   </div>
@@ -139,9 +193,10 @@ export default function AdminView({ tab }: { tab: string }) {
                     <div className="li" key={c.name}>
                       <i className="dot" style={{ background: c.color }} />
                       {c.name}
-                      <span className="amt">{c.amt}</span>
+                      <span className="amt">{fmt(c.amt)}</span>
                     </div>
                   ))}
+                  {CATS.length === 0 && <p style={{ fontSize: 12.5, color: "var(--muted)" }}>No members yet.</p>}
                 </div>
               </div>
             </div>
@@ -162,7 +217,7 @@ export default function AdminView({ tab }: { tab: string }) {
             </tr>
           </thead>
           <tbody>
-            {MEMBERS.map((m) => (
+            {members.map((m) => (
               <tr key={m.id}>
                 <td>
                   <span className="avatar">{m.name.split(" ").map((w) => w[0]).join("").slice(0, 2)}</span>
@@ -175,6 +230,13 @@ export default function AdminView({ tab }: { tab: string }) {
                 <td className="num">{fmt(m.principal + m.interest)}</td>
               </tr>
             ))}
+            {members.length === 0 && (
+              <tr>
+                <td colSpan={6} style={{ textAlign: "center", color: "var(--muted)", padding: "24px 0" }}>
+                  No members yet.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
         <p style={{ fontSize: 11.5, color: "var(--muted)", padding: "12px 22px" }}>

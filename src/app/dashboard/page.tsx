@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { Icon } from "@/components/Icons";
 import MemberView from "@/components/MemberView";
@@ -31,10 +31,8 @@ export default function Dashboard() {
   const { user, loading, logout } = useAuth();
   const [tab, setTab] = useState("home");
 
-  useEffect(() => {
-    if (!loading && !user) window.location.href = "/";
-  }, [user, loading]);
-
+  // middleware.ts owns the real signed-out -> "/" redirect; this is just
+  // the brief loading state before the client picks up the session.
   if (loading || !user) {
     return <div style={{ padding: 40, color: "var(--muted)" }}>Loading…</div>;
   }
