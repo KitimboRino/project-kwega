@@ -2,9 +2,15 @@
 -- Kwega Savings — Supabase schema
 --
 -- Run this whole file once, top to bottom, in the Supabase
--- Dashboard → SQL Editor, right after creating the project.
--- Safe to re-run individual sections if you tweak something,
--- but a full re-run from a clean project is the intended path.
+-- Dashboard → SQL Editor, right after creating the project (brand
+-- new project only — `create table` will error if it already exists).
+--
+-- On an EXISTING project, when new sections get appended later, only
+-- paste/run the NEW section you haven't run yet — not the whole file —
+-- since the `create table` statements near the top are not re-runnable
+-- once the tables exist. Everything below the tables (functions,
+-- triggers, grants, alter/add-column-if-not-exists) IS safe to
+-- re-run individually.
 -- ============================================================
 
 create extension if not exists pgcrypto; -- gen_random_uuid()
@@ -350,3 +356,107 @@ revoke all on function public.admin_update_profile(uuid, text, text, text, text)
 grant execute on function public.update_own_profile(text, text) to authenticated;
 grant execute on function public.update_member_details(uuid, text, text, text) to authenticated;
 grant execute on function public.admin_update_profile(uuid, text, text, text, text) to authenticated;
+
+-- ------------------------------------------------------------
+-- Interest accrual — credits members.interest for every fully
+-- elapsed 30-day cycle, compounding on (principal + interest already
+-- credited). principal itself is never touched here — only
+-- log_deposit/request_withdrawal change it.
+-- ------------------------------------------------------------
+
+-- last_interest_at tracks the cursor up to which interest has been
+-- credited, so credit_interest_cycle() below only credits NEW cycles
+-- instead of re-crediting from start_date every run.
+alter table public.members add column if not exists last_interest_at timestamptz;
+update public.members set last_interest_at = start_date::timestamptz where last_interest_at is null;
+alter table public.members alter column last_interest_at set not null;
+
+-- DEFAULT can't reference a sibling column (start_date), so this
+-- mirrors the members_set_account_no trigger above.
+create or replace function public.set_member_last_interest_at()
+returns trigger language plpgsql as $$
+begin
+  if new.last_interest_at is null then
+    new.last_interest_at := new.start_date::timestamptz;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists members_set_last_interest_at on public.members;
+create trigger members_set_last_interest_at
+  before insert on public.members
+  for each row execute function public.set_member_last_interest_at();
+
+create or replace function public.credit_interest_cycle()
+returns integer
+language plpgsql security definer set search_path = public as $$
+declare
+  m record;
+  v_cycles integer;
+  v_new_interest bigint;
+  v_delta bigint;
+  v_credited integer := 0;
+begin
+  -- anon has no EXECUTE grant at all (see revoke/grant below), so this
+  -- guard only has to distinguish an authenticated non-admin (rejected)
+  -- from pg_cron's unattended invocation, where auth.uid() is NULL
+  -- because there's no PostgREST/JWT context.
+  if auth.uid() is not null and get_my_role() <> 'admin' then
+    raise exception 'Not authorized';
+  end if;
+
+  for m in select * from public.members loop
+    v_cycles := floor((now()::date - m.last_interest_at::date) / 30)::int;
+    if v_cycles > 0 then
+      -- RULES.MONTHLY_RATE in src/lib/data.ts — keep in sync.
+      -- Reproduces projectInterest()'s compounding exactly when principal
+      -- is static: interest = (principal+interest)*(1+rate)^n - principal.
+      -- NOTE: if v_cycles > 1 in a single run (cron down 60+ days, or the
+      -- first run against pre-existing members), this applies today's
+      -- principal across all skipped cycles rather than the principal at
+      -- each historical boundary — a known simplification, not fixable
+      -- without replaying transactions chronologically per member.
+      v_new_interest := round((m.principal + m.interest) * power(1.07, v_cycles)) - m.principal;
+      v_delta := v_new_interest - m.interest;
+
+      update public.members
+      set interest = v_new_interest,
+          last_interest_at = m.last_interest_at + (v_cycles * 30 || ' days')::interval
+      where id = m.id;
+
+      if v_delta > 0 then
+        insert into public.transactions (member_id, type, amount, balance, created_by)
+        values (m.id, 'interest', v_delta, m.principal + v_new_interest, null);
+        v_credited := v_credited + 1;
+      end if;
+    end if;
+  end loop;
+
+  return v_credited;
+end;
+$$;
+
+revoke all on function public.credit_interest_cycle() from public;
+grant execute on function public.credit_interest_cycle() to authenticated;
+
+-- ------------------------------------------------------------
+-- Schedule credit_interest_cycle() daily rather than monthly, so it
+-- catches up cycles as they complete instead of depending on a single
+-- scheduled instant that might be missed; a no-op for any member whose
+-- cycle hasn't completed, so daily runs are cheap.
+--
+-- If `create extension` fails with a permission error, enable pg_cron
+-- via Dashboard -> Database -> Extensions instead, then re-run just the
+-- cron.schedule(...) call below — it works identically either way.
+-- cron.schedule() upserts by job name, so this whole block is safe to
+-- re-run.
+-- ------------------------------------------------------------
+
+create extension if not exists pg_cron with schema extensions;
+
+select cron.schedule(
+  'credit-interest-daily',
+  '0 1 * * *',
+  $$select public.credit_interest_cycle();$$
+);

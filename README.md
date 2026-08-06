@@ -9,6 +9,7 @@ One Next.js web app, three views gated by user role (RBAC), backed by Supabase (
 3. In the Supabase Dashboard → **SQL Editor**, paste the entire contents of [`supabase/schema.sql`](supabase/schema.sql) and run it. This creates all tables, RLS policies, and the `log_deposit` / `request_withdrawal` RPCs.
 4. In **Authentication → Providers → Email**, turn off "Confirm email" (simplifies local testing — re-enable before going to production).
 5. In **Edge Functions**, create a new function named `create-member` and paste in [`supabase/functions/create-member/index.ts`](supabase/functions/create-member/index.ts). This is what lets an officer invite a real member login — it needs the service-role key, so it must run server-side, not in the browser.
+   - **On this project specifically**, that function ended up deployed under the name `clever-function` instead (a dashboard-assigned name from troubleshooting a failed deploy — Supabase doesn't support renaming a function in place). `src/components/OfficerView.tsx` calls `clever-function` to match what's actually live. If you redeploy cleanly under the name `create-member`, update that `invoke()` call to match, and you can delete `clever-function`.
 
 ### Bootstrap the first admin
 
@@ -78,4 +79,4 @@ supabase/
 - **Withdrawals** always withdraw the full available balance (no partial-amount input yet) — the `request_withdrawal` RPC already supports partial amounts, so this is a small UI addition.
 - **Admin cash-flow chart** is now live (real `transactions` grouped by month, last 6 months) — it'll look sparse until there's real transaction volume, which is expected, not a bug.
 - **Trend badges** (e.g. "+12%") were removed rather than left fake — true period-over-period trends need a snapshot table.
-- **Interest accrual** (`projectInterest` in `src/lib/data.ts`) is not yet scheduled — it's the natural hook for a future monthly cron/Edge Function that credits interest automatically.
+- **Interest accrual** is now automated: `credit_interest_cycle()` (`supabase/schema.sql`) credits every member's `interest` for each fully-elapsed 30-day cycle since their `last_interest_at` cursor, compounding on `principal + interest` — matches `projectInterest()`'s math when principal is static. Scheduled daily via `pg_cron` (`credit-interest-daily`). Admin can also trigger it on demand from the Reports page ("Run interest accrual") without waiting for a real cycle. Known simplification: if a single run has to catch multiple elapsed cycles at once (cron down 60+ days, or the first run against pre-existing members), it applies today's principal retroactively across the skipped cycles rather than the principal that existed at each historical boundary — correct only when principal was static across those cycles.

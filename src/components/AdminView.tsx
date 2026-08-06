@@ -57,6 +57,8 @@ export default function AdminView({ tab }: { tab: string }) {
   const [members, setMembers] = useState<Member[]>([]);
   const [flow, setFlow] = useState<FlowBucket[]>(emptyFlowBuckets());
   const [loading, setLoading] = useState(true);
+  const [accruing, setAccruing] = useState(false);
+  const [accrualNotice, setAccrualNotice] = useState("");
 
   const load = useCallback(async () => {
     const { data } = await supabase
@@ -92,6 +94,19 @@ export default function AdminView({ tab }: { tab: string }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  const handleRunAccrual = async () => {
+    setAccruing(true);
+    setAccrualNotice("");
+    const { data, error } = await supabase.rpc("credit_interest_cycle");
+    setAccruing(false);
+    if (error) {
+      setAccrualNotice(error.message);
+      return;
+    }
+    setAccrualNotice(`Credited interest to ${data} member${data === 1 ? "" : "s"}.`);
+    load();
+  };
 
   const totalFunds = members.reduce((s, m) => s + m.principal + m.interest, 0);
   const totalInterest = members.reduce((s, m) => s + m.interest, 0);
@@ -129,10 +144,19 @@ export default function AdminView({ tab }: { tab: string }) {
           <p>Full visibility across members, officers, and funds</p>
         </div>
         <div className="actions">
+          <button className="btn btn-ghost" onClick={handleRunAccrual} disabled={accruing}>
+            {accruing ? "Running…" : "Run interest accrual"}
+          </button>
           <button className="btn btn-ghost">Compare</button>
           <button className="btn btn-primary">Export</button>
         </div>
       </div>
+
+      {accrualNotice && (
+        <p style={{ fontSize: 12.5, marginTop: -8, marginBottom: 16, color: "var(--forest)", fontWeight: 600 }}>
+          {accrualNotice}
+        </p>
+      )}
 
       {tab === "home" && (
         <>

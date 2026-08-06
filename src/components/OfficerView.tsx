@@ -126,7 +126,7 @@ export default function OfficerView({ tab }: { tab: string }) {
     }
     setCreating(true);
     setNotice("");
-    const { data, error } = await supabase.functions.invoke("create-member", {
+    const { data, error } = await supabase.functions.invoke("clever-function", {
       body: { email, name, phone, nationalId, dailyAmount: val, branch, startDate },
     });
     setCreating(false);

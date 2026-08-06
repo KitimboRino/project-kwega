@@ -3,6 +3,14 @@
 // Deploy via Supabase Dashboard -> Edge Functions -> create a function
 // named "create-member" -> paste this file's contents.
 //
+// NOTE: on this project, that function is actually deployed under the
+// name "clever-function" (a dashboard-assigned name from an earlier
+// attempt — Supabase doesn't support renaming a function in place, and
+// a later attempt to create one literally named "create-member" never
+// actually deployed). src/components/OfficerView.tsx invokes
+// "clever-function" to match. If you ever redeploy this cleanly under
+// the name "create-member", update that invoke() call back to match.
+//
 // Why this has to be an Edge Function and not a client-side call:
 // creating a new auth user requires the service-role key, which must
 // never reach the browser. A client-side supabase.auth.signUp() also
