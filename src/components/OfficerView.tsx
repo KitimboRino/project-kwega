@@ -60,6 +60,13 @@ export default function OfficerView({ tab }: { tab: string }) {
   const [loggingDeposit, setLoggingDeposit] = useState(false);
   const [depositNotice, setDepositNotice] = useState("");
 
+  const [editingMember, setEditingMember] = useState<Member | null>(null);
+  const [editPhone, setEditPhone] = useState("");
+  const [editBranch, setEditBranch] = useState("");
+  const [editNationalId, setEditNationalId] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+  const [editNotice, setEditNotice] = useState("");
+
   const loadMembers = useCallback(async () => {
     if (!user) return;
     const { data } = await supabase
@@ -166,6 +173,35 @@ export default function OfficerView({ tab }: { tab: string }) {
     setSearch("");
     loadMembers();
     loadLoggedToday();
+  };
+
+  const startEdit = async (m: Member) => {
+    setEditingMember(m);
+    setEditPhone(m.phone);
+    setEditBranch(m.branch);
+    setEditNationalId("");
+    setEditNotice("");
+    const { data } = await supabase.from("members").select("national_id").eq("id", m.id).single();
+    setEditNationalId(data?.national_id ?? "");
+  };
+
+  const handleSaveMemberEdit = async () => {
+    if (!editingMember) return;
+    setEditSaving(true);
+    setEditNotice("");
+    const { error } = await supabase.rpc("update_member_details", {
+      p_member_id: editingMember.id,
+      p_phone: editPhone,
+      p_branch: editBranch,
+      p_national_id: editNationalId,
+    });
+    setEditSaving(false);
+    if (error) {
+      setEditNotice(error.message);
+      return;
+    }
+    setEditingMember(null);
+    loadMembers();
   };
 
   return (
@@ -313,6 +349,44 @@ export default function OfficerView({ tab }: { tab: string }) {
         </div>
       )}
 
+      {(tab === "home" || tab === "accounts") && editingMember && (
+        <div className="panel section-gap">
+          <div className="panel-head">
+            <div>
+              <h3>Edit {editingMember.name}</h3>
+              <p className="hint">Update contact and branch details. Name changes must be made by the member.</p>
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="field">
+              <label>Phone number</label>
+              <input value={editPhone} onChange={(e) => setEditPhone(e.target.value)} placeholder="+256 7XX XXX XXX" />
+            </div>
+            <div className="field">
+              <label>Branch</label>
+              <select value={editBranch} onChange={(e) => setEditBranch(e.target.value)}>
+                {branches.map((b) => <option key={b} value={b}>{b}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="field">
+              <label>National ID</label>
+              <input value={editNationalId} onChange={(e) => setEditNationalId(e.target.value)} placeholder="CM..." />
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button className="btn btn-primary" onClick={handleSaveMemberEdit} disabled={editSaving}>
+              {editSaving ? "Saving…" : "Save changes"}
+            </button>
+            <button className="btn btn-ghost" onClick={() => setEditingMember(null)}>Cancel</button>
+          </div>
+          {editNotice && (
+            <p style={{ fontSize: 12.5, marginTop: 12, color: "var(--danger)", fontWeight: 600 }}>{editNotice}</p>
+          )}
+        </div>
+      )}
+
       {(tab === "home" || tab === "accounts") && (
         <div className="tbl-wrap section-gap">
           <div className="tbl-top">
@@ -323,7 +397,7 @@ export default function OfficerView({ tab }: { tab: string }) {
             <thead>
               <tr>
                 <th>Member</th><th>Account #</th><th>Status</th>
-                <th className="num">Balance</th><th className="num">Daily</th>
+                <th className="num">Balance</th><th className="num">Daily</th><th></th>
               </tr>
             </thead>
             <tbody>
@@ -337,11 +411,16 @@ export default function OfficerView({ tab }: { tab: string }) {
                   <td><span className={`tag ${m.status}`}>{m.status[0].toUpperCase() + m.status.slice(1)}</span></td>
                   <td className="num">{fmt(m.principal + m.interest)}</td>
                   <td className="num">{fmt(m.dailyAmount)}</td>
+                  <td>
+                    <button className="btn btn-ghost" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => startEdit(m)}>
+                      {Icon.edit} Edit
+                    </button>
+                  </td>
                 </tr>
               ))}
               {myMembers.length === 0 && (
                 <tr>
-                  <td colSpan={5} style={{ textAlign: "center", color: "var(--muted)", padding: "24px 0" }}>
+                  <td colSpan={6} style={{ textAlign: "center", color: "var(--muted)", padding: "24px 0" }}>
                     No accounts yet.
                   </td>
                 </tr>

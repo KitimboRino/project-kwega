@@ -252,3 +252,101 @@ revoke all on function public.log_deposit(uuid, bigint) from public;
 revoke all on function public.request_withdrawal(uuid, text, bigint) from public;
 grant execute on function public.log_deposit(uuid, bigint) to authenticated;
 grant execute on function public.request_withdrawal(uuid, text, bigint) to authenticated;
+
+-- ------------------------------------------------------------
+-- Profile-editing RPCs — same convention as log_deposit /
+-- request_withdrawal: SECURITY DEFINER (bypasses RLS internally)
+-- but re-checks auth.uid() authorization inside the function body.
+-- ------------------------------------------------------------
+
+-- Any authenticated user, their own row only. No role check needed —
+-- the WHERE clause is hardcoded to auth.uid(), never a client-supplied id.
+create or replace function public.update_own_profile(p_name text, p_phone text)
+returns public.profiles
+language plpgsql security definer set search_path = public as $$
+declare
+  v_profile public.profiles;
+begin
+  if p_name is null or trim(p_name) = '' then
+    raise exception 'Name is required';
+  end if;
+
+  update public.profiles
+  set name = trim(p_name), phone = p_phone
+  where id = auth.uid()
+  returning * into v_profile;
+
+  return v_profile;
+end;
+$$;
+
+-- The member's own managing officer, or admin. Deliberately does NOT
+-- accept a name param — officers can never rename a member, full stop,
+-- not just in the UI.
+create or replace function public.update_member_details(
+  p_member_id uuid, p_phone text, p_branch text, p_national_id text
+)
+returns public.members
+language plpgsql security definer set search_path = public as $$
+declare
+  v_member public.members;
+begin
+  select * into v_member from public.members where id = p_member_id;
+  if v_member is null then raise exception 'Member not found'; end if;
+  if not (v_member.officer_id = auth.uid() or get_my_role() = 'admin') then
+    raise exception 'Not authorized to edit this member';
+  end if;
+
+  update public.members
+  set branch = p_branch, national_id = p_national_id
+  where id = p_member_id
+  returning * into v_member;
+
+  -- Member's phone lives in profiles (shared PK with members), not here.
+  update public.profiles set phone = p_phone where id = p_member_id;
+
+  return v_member;
+end;
+$$;
+
+-- Admin only. Retargets any profiles row, including role. Refuses to
+-- touch the caller's own row so an admin can never self-demote by
+-- accident — self profile edits go through update_own_profile like
+-- everyone else, which cannot change role.
+create or replace function public.admin_update_profile(
+  p_user_id uuid, p_name text, p_phone text, p_branch text, p_role text
+)
+returns public.profiles
+language plpgsql security definer set search_path = public as $$
+declare
+  v_profile public.profiles;
+begin
+  if get_my_role() <> 'admin' then
+    raise exception 'Not authorized';
+  end if;
+  if p_user_id = auth.uid() then
+    raise exception 'Use your own Settings page to edit your profile; role cannot be self-changed';
+  end if;
+  if p_role not in ('member', 'officer', 'admin') then
+    raise exception 'Invalid role';
+  end if;
+  if p_name is null or trim(p_name) = '' then
+    raise exception 'Name is required';
+  end if;
+
+  update public.profiles
+  set name = trim(p_name), phone = p_phone, branch = p_branch, role = p_role
+  where id = p_user_id
+  returning * into v_profile;
+
+  if v_profile is null then raise exception 'Profile not found'; end if;
+  return v_profile;
+end;
+$$;
+
+revoke all on function public.update_own_profile(text, text) from public;
+revoke all on function public.update_member_details(uuid, text, text, text) from public;
+revoke all on function public.admin_update_profile(uuid, text, text, text, text) from public;
+grant execute on function public.update_own_profile(text, text) to authenticated;
+grant execute on function public.update_member_details(uuid, text, text, text) to authenticated;
+grant execute on function public.admin_update_profile(uuid, text, text, text, text) to authenticated;

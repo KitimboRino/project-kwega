@@ -6,6 +6,8 @@ import { Icon } from "@/components/Icons";
 import MemberView from "@/components/MemberView";
 import OfficerView from "@/components/OfficerView";
 import AdminView from "@/components/AdminView";
+import AdminUsers from "@/components/AdminUsers";
+import AccountSettings from "@/components/AccountSettings";
 
 type NavEntry = { key: string; label: string; icon: keyof typeof Icon; group: string; badge?: string };
 
@@ -14,16 +16,20 @@ const NAV: Record<string, NavEntry[]> = {
     { key: "home", label: "Overview", icon: "home", group: "Main menu" },
     { key: "activity", label: "Activity", icon: "list", group: "Main menu" },
     { key: "withdraw", label: "Withdraw", icon: "money", group: "Main menu" },
+    { key: "settings", label: "Settings", icon: "user", group: "Account" },
   ],
   officer: [
     { key: "home", label: "Officer desk", icon: "home", group: "Main menu" },
     { key: "accounts", label: "Accounts", icon: "users", group: "Management" },
     { key: "new", label: "New account", icon: "plus", group: "Management", badge: "New" },
+    { key: "settings", label: "Settings", icon: "user", group: "Account" },
   ],
   admin: [
     { key: "home", label: "Overview", icon: "chart", group: "Main menu" },
     { key: "members", label: "All members", icon: "users", group: "Management" },
     { key: "branches", label: "Branches", icon: "shield", group: "Management" },
+    { key: "users", label: "Users", icon: "users", group: "Management" },
+    { key: "settings", label: "Settings", icon: "user", group: "Account" },
   ],
 };
 
@@ -104,9 +110,17 @@ export default function Dashboard() {
         </div>
 
         <div className="content">
-          {user.role === "member" && <MemberView tab={tab} />}
-          {user.role === "officer" && <OfficerView tab={tab} />}
-          {user.role === "admin" && <AdminView tab={tab} />}
+          {tab === "settings" ? (
+            <AccountSettings />
+          ) : tab === "users" && user.role === "admin" ? (
+            <AdminUsers />
+          ) : (
+            <>
+              {user.role === "member" && <MemberView tab={tab} />}
+              {user.role === "officer" && <OfficerView tab={tab} />}
+              {user.role === "admin" && <AdminView tab={tab} />}
+            </>
+          )}
         </div>
       </main>
     </div>
