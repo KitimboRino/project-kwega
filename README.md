@@ -44,6 +44,34 @@ Open http://localhost:3000
 | Officer | Opens accounts, logs daily contributions, sees only the members they manage |
 | Admin   | Everyone and everything — all members, officers, branches, totals |
 
+## Using the app
+
+**Signing in**: go to `/`, enter email + password. New here? `/signup` creates a `member`-role login with no savings account attached (real member accounts are opened by an officer — see below). Forgot your password? Use the link on the sign-in page — it emails a reset link (subject to the email-sending caveat above).
+
+### As a member
+
+- **Overview** — total balance, principal (locked 1 yr from your start date), interest (withdrawable anytime), and this month's contribution progress.
+- **Withdraw** — pick Interest or Principal, enter an amount (or click **Max** to fill your full available balance), confirm. Principal is disabled while locked.
+- **Activity** — your transaction history; **Export** downloads it as a CSV.
+- **Settings** — edit your own name/phone, or change your sign-in email/password.
+- You can't log your own contributions — that's done by your officer when you make a deposit in person.
+
+### As an officer
+
+- **Officer desk** — your at-a-glance stats: accounts you manage, contributions logged today, total under your management.
+- **New account** — open a real member account: name, email (they'll get an invite email to set their own password), phone, national ID, daily amount (min 2,000 Ushs), branch, start date.
+- **Quick log contribution** — search a member you manage by name/account #, enter an amount, log the deposit.
+- **Accounts** — every member you manage, with an **Edit** action per row to update their phone/branch/national ID (not their name — only they can change that, via their own Settings).
+
+### As an admin
+
+- **Overview** — platform-wide totals, the cash-flow chart (real deposits vs. withdrawals, last 6 months), and funds-by-branch breakdown.
+- **All members** — every account on the platform, with **Export** to CSV.
+- **Branches** — add or remove branches; each shows its member count and funds under management. A branch with anyone still assigned to it can't be deleted.
+- **Users** — search any account (member, officer, or admin) and edit their name/phone/branch/role — this is how you promote someone to officer or admin, without touching SQL.
+- **Settings** — same self-edit (name/phone/email/password) every role gets.
+- **"Run interest accrual"** button on Overview manually credits interest for any member whose 30-day cycle has elapsed, instead of waiting for the daily scheduled job.
+
 ## System rules (`src/lib/data.ts`)
 
 - Minimum 2,000 Ushs/day contribution
@@ -79,4 +107,8 @@ supabase/
 - **Withdrawals** now support a partial amount (with a "Max" quick-fill) instead of always withdrawing the full balance.
 - **Admin cash-flow chart** is now live (real `transactions` grouped by month, last 6 months) — it'll look sparse until there's real transaction volume, which is expected, not a bug.
 - **Trend badges** (e.g. "+12%") were removed rather than left fake — true period-over-period trends need a snapshot table.
+- **Export** (member activity, admin all-members) now downloads a real CSV of what's on screen. Admin's "Compare" button is still decorative — no defined comparison target yet.
+- **Domain verification for email** is still not done — officer/admin invites and password resets only reliably reach your own email until a custom domain is verified with the SMTP provider (see setup notes above). This remains the main blocker between "works in testing" and "usable by real people."
+- **No automated tests** exist anywhere in the project — RLS policies and RPCs (including all money-movement logic) have only been verified manually/via ad-hoc API calls. Worth setting up before this handles real money at any scale.
+- **Branch manager role** was discussed but never scoped/built — still just member/officer/admin.
 - **Interest accrual** is now automated: `credit_interest_cycle()` (`supabase/schema.sql`) credits every member's `interest` for each fully-elapsed 30-day cycle since their `last_interest_at` cursor, compounding on `principal + interest` — matches `projectInterest()`'s math when principal is static. Scheduled daily via `pg_cron` (`credit-interest-daily`). Admin can also trigger it on demand from the Reports page ("Run interest accrual") without waiting for a real cycle. Known simplification: if a single run has to catch multiple elapsed cycles at once (cron down 60+ days, or the first run against pre-existing members), it applies today's principal retroactively across the skipped cycles rather than the principal that existed at each historical boundary — correct only when principal was static across those cycles.

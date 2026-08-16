@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { createClient } from "@/lib/supabase/client";
 import { fmt, isLocked, unlockDate, type Member } from "@/lib/data";
+import { downloadCSV } from "@/lib/csv";
 import { Icon } from "@/components/Icons";
 
 type MemberRow = {
@@ -298,7 +299,19 @@ export default function MemberView({ tab }: { tab: string }) {
         <div className="tbl-wrap section-gap">
           <div className="tbl-top">
             <h3>Recent activity</h3>
-            <button className="btn btn-ghost" style={{ padding: "8px 14px" }}>Export</button>
+            <button
+              className="btn btn-ghost"
+              style={{ padding: "8px 14px" }}
+              onClick={() =>
+                downloadCSV(
+                  `${me.accountNo}-activity.csv`,
+                  ["Date", "Type", "Amount", "Balance"],
+                  me.transactions.map((t) => [t.date, t.type, t.amount, t.balance])
+                )
+              }
+            >
+              Export
+            </button>
           </div>
           <table>
             <thead>

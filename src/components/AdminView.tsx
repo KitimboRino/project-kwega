@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { fmt, isLocked, type Member } from "@/lib/data";
+import { downloadCSV } from "@/lib/csv";
 import { Icon } from "@/components/Icons";
 
 type MemberRow = {
@@ -153,7 +154,27 @@ export default function AdminView({ tab }: { tab: string }) {
             {accruing ? "Running…" : "Run interest accrual"}
           </button>
           <button className="btn btn-ghost">Compare</button>
-          <button className="btn btn-primary">Export</button>
+          <button
+            className="btn btn-primary"
+            onClick={() =>
+              downloadCSV(
+                "all-members.csv",
+                ["Member", "Account #", "Officer", "Branch", "Status", "Principal", "Interest", "Balance"],
+                members.map((m) => [
+                  m.name,
+                  m.accountNo,
+                  m.officer,
+                  m.branch,
+                  m.status,
+                  m.principal,
+                  m.interest,
+                  m.principal + m.interest,
+                ])
+              )
+            }
+          >
+            Export
+          </button>
         </div>
       </div>
 

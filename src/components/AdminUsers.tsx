@@ -135,11 +135,16 @@ export default function AdminUsers() {
                   cursor: "pointer",
                   display: "flex",
                   justifyContent: "space-between",
+                  gap: 10,
                   background: selected?.id === p.id ? "var(--paper)" : "transparent",
                 }}
               >
-                <span>{p.name}</span>
-                <span className={`tag ${p.role === "admin" ? "locked" : "active"}`}>{p.role}</span>
+                <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {p.name}
+                </span>
+                <span className={`tag ${p.role === "admin" ? "locked" : "active"}`} style={{ flexShrink: 0 }}>
+                  {p.role}
+                </span>
               </div>
             ))}
             {filtered.length === 0 && (

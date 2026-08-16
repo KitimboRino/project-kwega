@@ -306,8 +306,6 @@ tbody tr:hover td { background: var(--paper); }
 }
 
 @media (max-width: 480px) {
-  .login-wrap { padding: 14px; }
-  .login-card { padding: 26px 22px; border-radius: 20px; }
   .auth-form-side { padding: 28px 18px; }
   .auth-welcome { font-size: 22px; }
   .page-head h2 { font-size: 22px; }

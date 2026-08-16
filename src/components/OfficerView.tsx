@@ -339,9 +339,11 @@ export default function OfficerView({ tab }: { tab: string }) {
                 Logged today
               </div>
               {loggedToday.slice(0, 5).map((l) => (
-                <div key={l.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "7px 0" }}>
-                  <span>{l.memberName} · {l.accountNo}</span>
-                  <span className="mono" style={{ color: "var(--forest)" }}>+{fmt(l.amount)}</span>
+                <div key={l.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 13, padding: "7px 0" }}>
+                  <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {l.memberName} · {l.accountNo}
+                  </span>
+                  <span className="mono" style={{ color: "var(--forest)", flexShrink: 0 }}>+{fmt(l.amount)}</span>
                 </div>
               ))}
               {loggedToday.length === 0 && (
