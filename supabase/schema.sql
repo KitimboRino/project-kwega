@@ -340,8 +340,12 @@ begin
     raise exception 'Name is required';
   end if;
 
+  -- coalesce, not a raw overwrite: AdminUsers.tsx sends p_branch = null
+  -- whenever the target isn't an officer (branch is only meaningful for
+  -- officers), which previously wiped a member's profiles.branch to null
+  -- on every unrelated edit (e.g. just fixing a phone number typo).
   update public.profiles
-  set name = trim(p_name), phone = p_phone, branch = p_branch, role = p_role
+  set name = trim(p_name), phone = p_phone, branch = coalesce(p_branch, branch), role = p_role
   where id = p_user_id
   returning * into v_profile;
 

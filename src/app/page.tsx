@@ -25,7 +25,7 @@ export default function LoginPage() {
     <div className="login-wrap">
       <div className="login-card">
         <div className="mark">K</div>
-        <h1>Kwega Savings</h1>
+        <h1>Kiyemba Savings</h1>
         <p className="sub">Daily contribution savings · 7% monthly compound. Sign in to continue.</p>
 
         <form onSubmit={handleSubmit}>

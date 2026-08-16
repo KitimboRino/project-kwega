@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { createClient } from "@/lib/supabase/client";
 import { RULES, fmt, isLocked, type Member } from "@/lib/data";
@@ -66,6 +66,7 @@ export default function OfficerView({ tab }: { tab: string }) {
   const [editNationalId, setEditNationalId] = useState("");
   const [editSaving, setEditSaving] = useState(false);
   const [editNotice, setEditNotice] = useState("");
+  const editRequestId = useRef(0);
 
   const loadMembers = useCallback(async () => {
     if (!user) return;
@@ -176,12 +177,14 @@ export default function OfficerView({ tab }: { tab: string }) {
   };
 
   const startEdit = async (m: Member) => {
+    const requestId = ++editRequestId.current;
     setEditingMember(m);
     setEditPhone(m.phone);
     setEditBranch(m.branch);
     setEditNationalId("");
     setEditNotice("");
     const { data } = await supabase.from("members").select("national_id").eq("id", m.id).single();
+    if (requestId !== editRequestId.current) return; // a newer edit click happened while this was in flight
     setEditNationalId(data?.national_id ?? "");
   };
 

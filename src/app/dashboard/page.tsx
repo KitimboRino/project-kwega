@@ -53,7 +53,7 @@ export default function Dashboard() {
         <div className="brand">
           <div className="mark">K</div>
           <div>
-            <b>Kwega</b>
+            <b>Kiyemba</b>
             <span>Savings</span>
           </div>
         </div>

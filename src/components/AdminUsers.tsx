@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { createClient } from "@/lib/supabase/client";
 import type { Role } from "@/lib/data";
@@ -26,6 +26,7 @@ export default function AdminUsers() {
   const [memberNationalId, setMemberNationalId] = useState("");
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
+  const selectRequestId = useRef(0);
 
   const loadProfiles = useCallback(async () => {
     const { data } = await supabase.from("profiles").select("id, name, phone, branch, role").order("name");
@@ -47,6 +48,7 @@ export default function AdminUsers() {
   );
 
   const select = async (p: ProfileRow) => {
+    const requestId = ++selectRequestId.current;
     setSelected(p);
     setName(p.name);
     setPhone(p.phone ?? "");
@@ -59,6 +61,7 @@ export default function AdminUsers() {
 
     if (p.role === "member") {
       const { data } = await supabase.from("members").select("branch, national_id").eq("id", p.id).maybeSingle();
+      if (requestId !== selectRequestId.current) return; // a newer selection happened while this was in flight
       if (data) {
         setIsMember(true);
         setMemberBranch(data.branch);

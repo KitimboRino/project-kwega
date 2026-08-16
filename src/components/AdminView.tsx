@@ -61,22 +61,27 @@ export default function AdminView({ tab }: { tab: string }) {
   const [accrualNotice, setAccrualNotice] = useState("");
 
   const load = useCallback(async () => {
-    const { data } = await supabase
-      .from("members")
-      .select(
-        "id, account_no, branch, principal, interest, start_date, member_profile:profiles!members_id_fkey(name), officer_profile:profiles!members_officer_id_fkey(name)"
-      );
-    if (data) setMembers((data as unknown as MemberRow[]).map(mapRow));
-
-    const buckets = emptyFlowBuckets();
     const now = new Date();
     const rangeStart = new Date(now.getFullYear(), now.getMonth() - 5, 1).toISOString();
-    const { data: txns } = await supabase
-      .from("transactions")
-      .select("type, amount, occurred_at")
-      .gte("occurred_at", rangeStart);
-    if (txns) {
-      for (const t of txns as { type: string; amount: number; occurred_at: string }[]) {
+
+    // Independent queries — run concurrently instead of round-tripping twice.
+    const [membersRes, txnsRes] = await Promise.all([
+      supabase
+        .from("members")
+        .select(
+          "id, account_no, branch, principal, interest, start_date, member_profile:profiles!members_id_fkey(name), officer_profile:profiles!members_officer_id_fkey(name)"
+        ),
+      supabase.from("transactions").select("type, amount, occurred_at").gte("occurred_at", rangeStart),
+    ]);
+
+    if (membersRes.data) setMembers((membersRes.data as unknown as MemberRow[]).map(mapRow));
+
+    const buckets = emptyFlowBuckets();
+    if (txnsRes.data) {
+      for (const t of txnsRes.data as { type: string; amount: number; occurred_at: string }[]) {
+        // 'interest' credits from credit_interest_cycle() are internal accrual,
+        // not real cash moving in — only real deposits count as income here.
+        if (t.type !== "deposit" && t.type !== "withdrawal") continue;
         const d = new Date(t.occurred_at);
         const key = `${d.getFullYear()}-${d.getMonth()}`;
         const bucket = buckets.find((b) => b.key === key);

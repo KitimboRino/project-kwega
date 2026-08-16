@@ -3,7 +3,7 @@ import "./globals.css";
 import { AuthProvider } from "@/context/AuthContext";
 
 export const metadata: Metadata = {
-  title: "Kwega Savings",
+  title: "Kiyemba Savings",
   description: "Daily contribution savings system — role-based access",
 };
 
