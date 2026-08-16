@@ -48,6 +48,8 @@ export default function MemberView({ tab }: { tab: string }) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [interestAmount, setInterestAmount] = useState("");
+  const [principalAmount, setPrincipalAmount] = useState("");
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -68,8 +70,18 @@ export default function MemberView({ tab }: { tab: string }) {
     load();
   }, [load]);
 
-  const withdraw = async (kind: "interest" | "principal", amount: number) => {
-    if (!user || amount <= 0) return;
+  const withdraw = async (kind: "interest" | "principal", raw: string) => {
+    if (!user || !me) return;
+    const amount = Number(raw.replace(/,/g, ""));
+    const available = kind === "interest" ? me.interest : me.principal;
+    if (!amount || amount <= 0) {
+      setError("Enter a valid amount.");
+      return;
+    }
+    if (amount > available) {
+      setError(`You only have ${fmt(available)} Ushs of ${kind} available.`);
+      return;
+    }
     if (!window.confirm(`Withdraw ${fmt(amount)} Ushs of ${kind}?`)) return;
     setBusy(true);
     setError("");
@@ -79,8 +91,13 @@ export default function MemberView({ tab }: { tab: string }) {
       p_amount: amount,
     });
     setBusy(false);
-    if (err) setError(err.message);
-    else load();
+    if (err) {
+      setError(err.message);
+    } else {
+      if (kind === "interest") setInterestAmount("");
+      else setPrincipalAmount("");
+      load();
+    }
   };
 
   if (loading) return <div style={{ padding: 40, color: "var(--muted)" }}>Loading…</div>;
@@ -207,11 +224,30 @@ export default function MemberView({ tab }: { tab: string }) {
               <div className="split-box">
                 <div className="k">Interest</div>
                 <div className="v" style={{ color: "var(--forest)" }}>{fmt(me.interest)}</div>
+                {me.interest > 0 && (
+                  <div className="field" style={{ margin: "10px 0" }}>
+                    <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span>Amount</span>
+                      <span
+                        onClick={() => setInterestAmount(String(me.interest))}
+                        style={{ cursor: "pointer", color: "var(--forest)", fontWeight: 600, textTransform: "none" }}
+                      >
+                        Max
+                      </span>
+                    </label>
+                    <input
+                      className="mono"
+                      placeholder="0"
+                      value={interestAmount}
+                      onChange={(e) => setInterestAmount(e.target.value)}
+                    />
+                  </div>
+                )}
                 <button
                   className="btn btn-lime"
                   style={{ width: "100%", justifyContent: "center" }}
                   disabled={busy || me.interest <= 0}
-                  onClick={() => withdraw("interest", me.interest)}
+                  onClick={() => withdraw("interest", interestAmount)}
                 >
                   Withdraw
                 </button>
@@ -219,11 +255,30 @@ export default function MemberView({ tab }: { tab: string }) {
               <div className="split-box locked">
                 <div className="k">Principal</div>
                 <div className="v">{fmt(me.principal)}</div>
+                {!locked && me.principal > 0 && (
+                  <div className="field" style={{ margin: "10px 0" }}>
+                    <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span>Amount</span>
+                      <span
+                        onClick={() => setPrincipalAmount(String(me.principal))}
+                        style={{ cursor: "pointer", color: "var(--forest)", fontWeight: 600, textTransform: "none" }}
+                      >
+                        Max
+                      </span>
+                    </label>
+                    <input
+                      className="mono"
+                      placeholder="0"
+                      value={principalAmount}
+                      onChange={(e) => setPrincipalAmount(e.target.value)}
+                    />
+                  </div>
+                )}
                 <button
                   className="btn btn-ghost"
                   disabled={locked || busy || me.principal <= 0}
                   style={{ width: "100%", justifyContent: "center" }}
-                  onClick={() => withdraw("principal", me.principal)}
+                  onClick={() => withdraw("principal", principalAmount)}
                 >
                   {locked ? "Locked" : "Withdraw"}
                 </button>

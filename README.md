@@ -76,7 +76,7 @@ supabase/
 ## Known gaps / future work
 
 - **Contribution self-service**: members currently can't log their own deposits (by design — contributions are collected in person and logged by the officer). The "Add contribution" button is decorative.
-- **Withdrawals** always withdraw the full available balance (no partial-amount input yet) — the `request_withdrawal` RPC already supports partial amounts, so this is a small UI addition.
+- **Withdrawals** now support a partial amount (with a "Max" quick-fill) instead of always withdrawing the full balance.
 - **Admin cash-flow chart** is now live (real `transactions` grouped by month, last 6 months) — it'll look sparse until there's real transaction volume, which is expected, not a bug.
 - **Trend badges** (e.g. "+12%") were removed rather than left fake — true period-over-period trends need a snapshot table.
 - **Interest accrual** is now automated: `credit_interest_cycle()` (`supabase/schema.sql`) credits every member's `interest` for each fully-elapsed 30-day cycle since their `last_interest_at` cursor, compounding on `principal + interest` — matches `projectInterest()`'s math when principal is static. Scheduled daily via `pg_cron` (`credit-interest-daily`). Admin can also trigger it on demand from the Reports page ("Run interest accrual") without waiting for a real cycle. Known simplification: if a single run has to catch multiple elapsed cycles at once (cron down 60+ days, or the first run against pre-existing members), it applies today's principal retroactively across the skipped cycles rather than the principal that existed at each historical boundary — correct only when principal was static across those cycles.

@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { Icon } from "@/components/Icons";
+import AuthVisual from "@/components/AuthVisual";
 
 export default function SignupPage() {
   const { signUp } = useAuth();
@@ -25,66 +26,74 @@ export default function SignupPage() {
   };
 
   return (
-    <div className="login-wrap">
-      <div className="login-card">
-        <div className="mark">K</div>
-        <h1>Create an account</h1>
-        <p className="sub">
-          Every new sign-up starts as a member with no savings account attached. Real member
-          accounts are opened by a savings officer — this page mainly bootstraps the first
-          admin/officer login, who are then promoted from the Supabase dashboard.
-        </p>
+    <div className="auth-split">
+      <AuthVisual />
 
-        {done ? (
-          <p style={{ fontSize: 13.5, color: "var(--forest)", fontWeight: 600 }}>
-            Account created. Check your email to confirm, then{" "}
-            <Link href="/" style={{ color: "var(--forest)" }}>sign in</Link>.
+      <div className="auth-form-side">
+        <div className="auth-form-wrap">
+          <div className="auth-brand-row">
+            <div className="mark">K</div>
+            <span className="auth-brand-name">Kiyemba Savings</span>
+          </div>
+
+          <h1 className="auth-welcome">Create an account</h1>
+          <p className="sub">
+            Every new sign-up starts as a member with no savings account attached. Real member accounts
+            are opened by a savings officer — this page mainly bootstraps the first admin/officer login.
           </p>
-        ) : (
-          <>
-            <form onSubmit={handleSubmit}>
-              <div className="field" style={{ marginBottom: 14 }}>
-                <label>Full name</label>
-                <input required value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Amara Nabirye" />
-              </div>
-              <div className="field" style={{ marginBottom: 14 }}>
-                <label>Email</label>
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@example.com"
-                />
-              </div>
-              <div className="field" style={{ marginBottom: 14 }}>
-                <label>Password</label>
-                <input
-                  type="password"
-                  required
-                  minLength={6}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="At least 6 characters"
-                />
-              </div>
-              {error && (
-                <p style={{ fontSize: 12.5, marginBottom: 14, color: "var(--danger)", fontWeight: 600 }}>{error}</p>
-              )}
-              <button
-                className="btn btn-primary"
-                type="submit"
-                disabled={submitting}
-                style={{ width: "100%", justifyContent: "center" }}
-              >
-                {Icon.plus} {submitting ? "Creating…" : "Create account"}
-              </button>
-            </form>
-            <p style={{ fontSize: 12.5, marginTop: 18, textAlign: "center", color: "var(--muted)" }}>
-              Already have an account? <Link href="/" style={{ color: "var(--forest)", fontWeight: 600 }}>Sign in</Link>
+
+          {done ? (
+            <p style={{ fontSize: 13.5, color: "var(--forest)", fontWeight: 600 }}>
+              Account created. Check your email to confirm, then{" "}
+              <Link href="/" style={{ color: "var(--forest)" }}>sign in</Link>.
             </p>
-          </>
-        )}
+          ) : (
+            <>
+              <form onSubmit={handleSubmit}>
+                <div className="field" style={{ marginBottom: 14 }}>
+                  <label>Full name</label>
+                  <input required value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Amara Nabirye" />
+                </div>
+                <div className="field" style={{ marginBottom: 14 }}>
+                  <label>Email</label>
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@example.com"
+                  />
+                </div>
+                <div className="field" style={{ marginBottom: 14 }}>
+                  <label>Password</label>
+                  <input
+                    type="password"
+                    required
+                    minLength={6}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="At least 6 characters"
+                  />
+                </div>
+                {error && (
+                  <p style={{ fontSize: 12.5, marginBottom: 14, color: "var(--danger)", fontWeight: 600 }}>{error}</p>
+                )}
+                <button
+                  className="btn btn-primary"
+                  type="submit"
+                  disabled={submitting}
+                  style={{ width: "100%", justifyContent: "center" }}
+                >
+                  {Icon.plus} {submitting ? "Creating…" : "Create account"}
+                </button>
+              </form>
+
+              <p className="auth-signup-link">
+                Already have an account? <Link href="/">Sign in</Link>
+              </p>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

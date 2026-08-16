@@ -7,6 +7,7 @@ import MemberView from "@/components/MemberView";
 import OfficerView from "@/components/OfficerView";
 import AdminView from "@/components/AdminView";
 import AdminUsers from "@/components/AdminUsers";
+import AdminBranches from "@/components/AdminBranches";
 import AccountSettings from "@/components/AccountSettings";
 
 type NavEntry = { key: string; label: string; icon: keyof typeof Icon; group: string; badge?: string };
@@ -114,6 +115,8 @@ export default function Dashboard() {
             <AccountSettings />
           ) : tab === "users" && user.role === "admin" ? (
             <AdminUsers />
+          ) : tab === "branches" && user.role === "admin" ? (
+            <AdminBranches />
           ) : (
             <>
               {user.role === "member" && <MemberView tab={tab} />}
