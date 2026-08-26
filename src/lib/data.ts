@@ -60,3 +60,13 @@ export function isLocked(startDateISO: string, asOf = new Date()) {
 }
 
 export const fmt = (n: number) => n.toLocaleString("en-UG");
+
+// Abbreviated form for tight spaces (chart bar labels, etc.) where the full
+// comma-formatted number would overflow — e.g. 897000 -> "897K", 1656000 -> "1.7M".
+export function fmtShort(n: number) {
+  const sign = n < 0 ? "-" : "";
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000) return `${sign}${(abs / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+  if (abs >= 1_000) return `${sign}${Math.round(abs / 1000)}K`;
+  return `${sign}${abs}`;
+}

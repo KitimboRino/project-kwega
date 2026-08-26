@@ -146,7 +146,7 @@ body {
 .chart .bar { width: 46%; max-width: 46px; border-radius: 10px 10px 0 0; position: relative; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 8px; min-height: 30px; }
 .chart .bar.inc { background: linear-gradient(180deg, var(--lime-bar-top), var(--lime-bar-bot)); }
 .chart .bar.exp { background: linear-gradient(180deg, #fef9e7, var(--gold-soft)); }
-.chart .bar span { font-size: 12px; font-weight: 600; color: var(--muted-ink); }
+.chart .bar span { font-size: 11px; font-weight: 600; color: var(--muted-ink); white-space: nowrap; overflow: visible; }
 .chart .xlabel { font-size: 12px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
 
 /* ---------- Stat footer strip ---------- */

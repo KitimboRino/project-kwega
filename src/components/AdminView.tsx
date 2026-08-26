@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { fmt, isLocked, type Member } from "@/lib/data";
+import { fmt, fmtShort, isLocked, type Member } from "@/lib/data";
 import { downloadCSV } from "@/lib/csv";
 import { Icon } from "@/components/Icons";
 
@@ -60,6 +60,7 @@ export default function AdminView({ tab }: { tab: string }) {
   const [loading, setLoading] = useState(true);
   const [accruing, setAccruing] = useState(false);
   const [accrualNotice, setAccrualNotice] = useState("");
+  const [flowFilter, setFlowFilter] = useState<"income" | "expense" | "both">("both");
 
   const load = useCallback(async () => {
     const now = new Date();
@@ -128,7 +129,10 @@ export default function AdminView({ tab }: { tab: string }) {
     }))
     .sort((a, b) => b.amt - a.amt);
 
-  const maxFlow = Math.max(1, ...flow.flatMap((f) => [f.inc, f.exp]));
+  const maxFlow = Math.max(
+    1,
+    ...flow.flatMap((f) => (flowFilter === "income" ? [f.inc] : flowFilter === "expense" ? [f.exp] : [f.inc, f.exp]))
+  );
   const hasFlow = flow.some((f) => f.inc > 0 || f.exp > 0);
 
   let acc = 0;
@@ -233,21 +237,43 @@ export default function AdminView({ tab }: { tab: string }) {
                   <p className="hint">Contributions vs payouts · last 6 months</p>
                 </div>
                 <div className="legend-toggle">
-                  <span><i className="dot g" /> Income</span>
-                  <span><i className="dot y" /> Expense</span>
-                  <span className="on"><i className="dot k" /> Both</span>
+                  <span
+                    className={flowFilter === "income" ? "on" : ""}
+                    onClick={() => setFlowFilter("income")}
+                    style={{ cursor: "pointer" }}
+                  >
+                    <i className="dot g" /> Income
+                  </span>
+                  <span
+                    className={flowFilter === "expense" ? "on" : ""}
+                    onClick={() => setFlowFilter("expense")}
+                    style={{ cursor: "pointer" }}
+                  >
+                    <i className="dot y" /> Expense
+                  </span>
+                  <span
+                    className={flowFilter === "both" ? "on" : ""}
+                    onClick={() => setFlowFilter("both")}
+                    style={{ cursor: "pointer" }}
+                  >
+                    <i className="dot k" /> Both
+                  </span>
                 </div>
               </div>
               <div className="chart">
                 {flow.map((f) => (
                   <div className="col" key={f.key}>
                     <div className="pair">
-                      <div className="bar inc" style={{ height: `${Math.round((f.inc / maxFlow) * 100)}%` }}>
-                        <span>{fmt(f.inc)}</span>
-                      </div>
-                      <div className="bar exp" style={{ height: `${Math.round((f.exp / maxFlow) * 100)}%` }}>
-                        <span>{fmt(f.exp)}</span>
-                      </div>
+                      {flowFilter !== "expense" && (
+                        <div className="bar inc" style={{ height: `${Math.round((f.inc / maxFlow) * 100)}%` }} title={fmt(f.inc)}>
+                          <span>{fmtShort(f.inc)}</span>
+                        </div>
+                      )}
+                      {flowFilter !== "income" && (
+                        <div className="bar exp" style={{ height: `${Math.round((f.exp / maxFlow) * 100)}%` }} title={fmt(f.exp)}>
+                          <span>{fmtShort(f.exp)}</span>
+                        </div>
+                      )}
                     </div>
                     <div className="xlabel">{f.label}</div>
                   </div>
@@ -263,7 +289,7 @@ export default function AdminView({ tab }: { tab: string }) {
                 <div className="donut" style={{ background: `conic-gradient(${stops})` }}>
                   <div className="hole">
                     <div>
-                      <b>{fmt(totalFunds)}</b>
+                      <b title={fmt(totalFunds)}>{fmtShort(totalFunds)}</b>
                       <small>total</small>
                     </div>
                   </div>
