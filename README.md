@@ -1,12 +1,12 @@
 # Kwega Savings — Role-Based Savings System
 
-One Next.js web app, three views gated by user role (RBAC), backed by Supabase (Postgres + Auth).
+One Next.js web app, role-gated (RBAC) across member/officer/admin, backed by Supabase (Postgres + Auth). Mobile responsive.
 
 ## Set up Supabase (one-time)
 
 1. Create a free project at [supabase.com](https://supabase.com).
 2. Copy `.env.local.example` to `.env.local` and fill in your project's URL and anon key (Dashboard → Project Settings → API).
-3. In the Supabase Dashboard → **SQL Editor**, paste the entire contents of [`supabase/schema.sql`](supabase/schema.sql) and run it. This creates all tables, RLS policies, and the `log_deposit` / `request_withdrawal` RPCs.
+3. In the Supabase Dashboard → **SQL Editor**, paste the entire contents of [`supabase/schema.sql`](supabase/schema.sql) and run it. This creates all tables, RLS policies, the money-movement RPCs (`log_deposit`, `request_withdrawal`), the profile-editing RPCs (`update_own_profile`, `update_member_details`, `admin_update_profile`), and the interest-accrual job (`credit_interest_cycle` + its daily `pg_cron` schedule).
 4. In **Authentication → Providers → Email**, turn off "Confirm email" (simplifies local testing — re-enable before going to production).
 5. In **Edge Functions**, create a new function named `create-member` and paste in [`supabase/functions/create-member/index.ts`](supabase/functions/create-member/index.ts). This is what lets an officer invite a real member login — it needs the service-role key, so it must run server-side, not in the browser.
    - **On this project specifically**, that function ended up deployed under the name `clever-function` instead (a dashboard-assigned name from troubleshooting a failed deploy — Supabase doesn't support renaming a function in place). `src/components/OfficerView.tsx` calls `clever-function` to match what's actually live. If you redeploy cleanly under the name `create-member`, update that `invoke()` call to match, and you can delete `clever-function`.
@@ -33,7 +33,7 @@ Open http://localhost:3000
 - **Real email/password auth** via Supabase Auth (`/` to sign in, `/signup` to create an account). Every signup defaults to the `member` role with no savings account attached — real member accounts are created by an officer (see below).
 - `AuthContext` (`src/context/AuthContext.tsx`) holds the signed-in Supabase user, joined with their `profiles` row (name, role, branch).
 - `middleware.ts` refreshes the session on every request and redirects signed-out users away from `/dashboard`. This is UX-level only.
-- The **real** enforcement is Postgres Row Level Security (`supabase/schema.sql`) — a member's queries can only ever return their own `members`/`transactions` rows, an officer's only the members they manage, regardless of what the UI does. Money movement (deposits, withdrawals) goes through `SECURITY DEFINER` RPCs, not raw client inserts, so the min-daily and 1-year-lock rules can't be bypassed client-side.
+- The **real** enforcement is Postgres Row Level Security (`supabase/schema.sql`) — a member's queries can only ever return their own `members`/`transactions` rows, an officer's only the members they manage, regardless of what the UI does. Money movement (deposits, withdrawals, interest accrual) and every profile edit (self, officer-on-a-member, admin-on-anyone) go through `SECURITY DEFINER` RPCs, not raw client inserts/updates — this is what makes rules like the min-daily amount, the 1-year principal lock, "officers can't rename a member," and "admins can't self-demote" unbypassable, not just hidden in the UI.
 - The dashboard renders **only** the view matching the user's role. The sidebar nav is also role-specific.
 
 ## Who sees what
@@ -83,21 +83,31 @@ Open http://localhost:3000
 ```
 src/
   app/
-    page.tsx            sign-in
-    signup/page.tsx     sign-up (bootstraps first admin/officer only)
-    dashboard/page.tsx  shell + role gate
-    layout.tsx          wraps app in AuthProvider
-    globals.css         design tokens + styles
+    page.tsx                    sign-in (split-screen design, shared with the other auth pages)
+    signup/page.tsx             sign-up (bootstraps first admin/officer only)
+    forgot-password/page.tsx    request a password-reset email
+    reset-password/page.tsx     set a new password from the emailed link
+    dashboard/page.tsx          shell, role-specific nav, tab routing
+    layout.tsx                  wraps app in AuthProvider
+    globals.css                 design tokens, component styles, responsive breakpoints
   components/
-    MemberView.tsx  OfficerView.tsx  AdminView.tsx  Icons.tsx
+    MemberView.tsx        member dashboard — balance, withdraw, activity, export
+    OfficerView.tsx        officer desk — open accounts, log deposits, edit members
+    AdminView.tsx           admin reports — stats, cash-flow chart, branch donut, all members, export, interest accrual trigger
+    AdminUsers.tsx          admin — search/edit any account, promote roles
+    AdminBranches.tsx       admin — add/remove branches, per-branch stats
+    AccountSettings.tsx     shared self-service settings (name/phone/email/password) — every role
+    AuthVisual.tsx          shared illustration panel reused by all four auth pages
+    Icons.tsx
   context/AuthContext.tsx
   lib/
-    data.ts             types, business rules (RULES, isLocked, projectInterest, fmt)
-    supabase/client.ts   browser Supabase client
-    supabase/server.ts   server Supabase client (Server Components)
-middleware.ts            session refresh + coarse route gating
+    data.ts               types, business rules (RULES, isLocked, projectInterest, fmt)
+    csv.ts                CSV export helper (includes a formula-injection guard, see below)
+    supabase/client.ts     browser Supabase client
+    supabase/server.ts     server Supabase client (Server Components)
+middleware.ts              session refresh + coarse route gating
 supabase/
-  schema.sql             tables, RLS policies, RPCs — run once in the SQL Editor
+  schema.sql               tables, RLS policies, RPCs, interest-accrual job — run once in the SQL Editor
   functions/create-member/index.ts  Edge Function: officer invites a real member login
 ```
 
@@ -107,7 +117,8 @@ supabase/
 - **Withdrawals** now support a partial amount (with a "Max" quick-fill) instead of always withdrawing the full balance.
 - **Admin cash-flow chart** is now live (real `transactions` grouped by month, last 6 months) — it'll look sparse until there's real transaction volume, which is expected, not a bug.
 - **Trend badges** (e.g. "+12%") were removed rather than left fake — true period-over-period trends need a snapshot table.
-- **Export** (member activity, admin all-members) now downloads a real CSV of what's on screen. Admin's "Compare" button is still decorative — no defined comparison target yet.
+- **Export** (member activity, admin all-members) downloads a real CSV of what's on screen (`src/lib/csv.ts`). Guards against CSV/formula injection — a text cell starting with `=`, `+`, `-`, `@`, tab, or CR (e.g. a member setting their own name to a formula via Settings) is neutralized before export, so opening the file in Excel/Sheets can't execute anything. Admin's "Compare" button is still decorative — no defined comparison target yet.
+- **Mobile responsive** — sidebar collapses to a horizontal icon strip, grids stack to one column, tables scroll horizontally instead of squeezing illegibly, and there's a dedicated `≤480px` breakpoint for phones on top of the `≤760px`/`≤1000px` tablet breakpoints (`src/app/globals.css`). Audited against everything built this session, not just the original views.
 - **Domain verification for email** is still not done — officer/admin invites and password resets only reliably reach your own email until a custom domain is verified with the SMTP provider (see setup notes above). This remains the main blocker between "works in testing" and "usable by real people."
 - **No automated tests** exist anywhere in the project — RLS policies and RPCs (including all money-movement logic) have only been verified manually/via ad-hoc API calls. Worth setting up before this handles real money at any scale.
 - **Branch manager role** was discussed but never scoped/built — still just member/officer/admin.

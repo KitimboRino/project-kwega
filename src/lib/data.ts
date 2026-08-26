@@ -10,7 +10,8 @@ export interface User {
 }
 
 export interface Transaction {
-  date: string;
+  date: string; // display-formatted
+  occurredAt: string; // raw ISO timestamp, for date math (e.g. current-cycle filtering)
   type: "deposit" | "interest" | "withdrawal";
   amount: number;
   balance: number;

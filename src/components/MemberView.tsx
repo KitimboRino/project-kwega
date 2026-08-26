@@ -35,6 +35,7 @@ function mapRow(row: MemberRow, fallbackName: string): Member {
       .sort((a, b) => +new Date(b.occurred_at) - +new Date(a.occurred_at))
       .map((t) => ({
         date: new Date(t.occurred_at).toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }),
+        occurredAt: t.occurred_at,
         type: t.type as "deposit" | "interest" | "withdrawal",
         amount: t.amount,
         balance: t.balance,
@@ -123,9 +124,19 @@ export default function MemberView({ tab }: { tab: string }) {
     year: "numeric",
   });
 
+  // Progress within the CURRENT 30-day cycle since start_date — same cycle
+  // boundary credit_interest_cycle() uses, not a calendar month, so this
+  // stays consistent with when interest actually gets credited.
+  const daysSinceStart = Math.max(0, Math.floor((Date.now() - new Date(me.startDate).getTime()) / 86400000));
+  const dayInCycle = daysSinceStart % 30;
+  const cycleStart = new Date(me.startDate);
+  cycleStart.setDate(cycleStart.getDate() + Math.floor(daysSinceStart / 30) * 30);
+
   const monthTarget = me.dailyAmount * 30;
-  const monthSaved = Math.round(monthTarget * 0.74);
-  const pct = Math.round((monthSaved / monthTarget) * 100);
+  const monthSaved = me.transactions
+    .filter((t) => t.type === "deposit" && new Date(t.occurredAt) >= cycleStart)
+    .reduce((s, t) => s + t.amount, 0);
+  const pct = monthTarget > 0 ? Math.min(100, Math.round((monthSaved / monthTarget) * 100)) : 0;
 
   return (
     <>
@@ -156,9 +167,7 @@ export default function MemberView({ tab }: { tab: string }) {
               <div className="lbl">Total balance</div>
               <div className="dots">···</div>
             </div>
-            <div className="val">
-              {fmt(balance)} <span className="delta up">▲ 7%</span>
-            </div>
+            <div className="val">{fmt(balance)}</div>
             <div className="cur">Ushs · principal + interest</div>
           </div>
 
@@ -208,7 +217,7 @@ export default function MemberView({ tab }: { tab: string }) {
             </div>
             <div className="bar-legend">
               <span>{fmt(monthSaved)} / {fmt(monthTarget)} Ushs</span>
-              <span>22 of 30 days</span>
+              <span>Day {dayInCycle + 1} of 30</span>
             </div>
             <div style={{ marginTop: 18, display: "flex", gap: 10 }}>
               <button className="btn btn-primary" disabled title="Contributions are logged by your savings officer">

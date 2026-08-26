@@ -68,13 +68,27 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { email, name, phone, nationalId, dailyAmount, branch, startDate } = await req.json();
+    const { email, name, phone, nationalId, dailyAmount, branch, startDate, silent, initialPrincipal } =
+      await req.json();
 
     if (!email || !name || !dailyAmount || dailyAmount < MIN_DAILY || !branch) {
       return new Response(
         JSON.stringify({ error: `Name, email, branch, and a daily amount of at least ${MIN_DAILY} are required.` }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+    }
+
+    // silent + initialPrincipal is a bulk-import path (e.g. migrating an
+    // existing paper/spreadsheet ledger): creates the account with no
+    // invite email sent and an opening balance already on it. Restricted
+    // to admin — this bypasses the normal "officer opens their own
+    // account, member sets their own password" flow, so it's a
+    // deliberately heavier-weight action than everyday account creation.
+    if (silent && callerProfile.role !== "admin") {
+      return new Response(JSON.stringify({ error: "Only admin can silently import accounts" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     // Admin client — holds the service-role key, only ever used inside
@@ -84,35 +98,75 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    const { data: invited, error: inviteErr } = await admin.auth.admin.inviteUserByEmail(email, {
-      data: { role: "member", name, phone, branch },
-    });
-    if (inviteErr) {
-      return new Response(JSON.stringify({ error: inviteErr.message }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+    let newUserId: string;
+    if (silent) {
+      // No email sent at all — unlike inviteUserByEmail. The email only
+      // needs to be well-formed, not deliverable; nobody can sign in with
+      // it until an admin later resets it to a real address the person
+      // controls (Users tab, or re-inviting them properly).
+      const { data: created, error: createErr } = await admin.auth.admin.createUser({
+        email,
+        email_confirm: true,
+        password: crypto.randomUUID() + crypto.randomUUID(), // unusable placeholder, nobody needs to know it
+        user_metadata: { role: "member", name, phone, branch },
       });
+      if (createErr) {
+        return new Response(JSON.stringify({ error: createErr.message }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      newUserId = created.user.id;
+    } else {
+      const { data: invited, error: inviteErr } = await admin.auth.admin.inviteUserByEmail(email, {
+        data: { role: "member", name, phone, branch },
+      });
+      if (inviteErr) {
+        return new Response(JSON.stringify({ error: inviteErr.message }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      newUserId = invited.user.id;
     }
+
+    const principal = silent && initialPrincipal > 0 ? Math.round(initialPrincipal) : 0;
 
     const { data: member, error: memberErr } = await admin
       .from("members")
       .insert({
-        id: invited.user.id,
+        id: newUserId,
         officer_id: caller.id,
         branch,
         national_id: nationalId ?? null,
         daily_amount: dailyAmount,
         start_date: startDate,
+        principal,
       })
       .select()
       .single();
 
     if (memberErr) {
-      // Roll back the invited auth user so a retry doesn't collide on email.
-      await admin.auth.admin.deleteUser(invited.user.id);
+      // Roll back the created/invited auth user so a retry doesn't collide on email.
+      await admin.auth.admin.deleteUser(newUserId);
       return new Response(JSON.stringify({ error: memberErr.message }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Record the opening balance as a real transaction, backdated to the
+    // account's start date rather than "now" — this is what makes it show
+    // up honestly as historical activity instead of a deposit that
+    // supposedly happened today.
+    if (principal > 0) {
+      await admin.from("transactions").insert({
+        member_id: newUserId,
+        type: "deposit",
+        amount: principal,
+        balance: principal,
+        occurred_at: new Date(startDate).toISOString(),
+        created_by: caller.id,
       });
     }
 
