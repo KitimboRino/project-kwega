@@ -56,6 +56,7 @@ export default function OfficerView({ tab }: { tab: string }) {
 
   const [search, setSearch] = useState("");
   const [depositAmount, setDepositAmount] = useState("2,000");
+  const [depositDate, setDepositDate] = useState(new Date().toISOString().slice(0, 10));
   const [selectedMemberId, setSelectedMemberId] = useState("");
   const [loggingDeposit, setLoggingDeposit] = useState(false);
   const [depositNotice, setDepositNotice] = useState("");
@@ -163,7 +164,11 @@ export default function OfficerView({ tab }: { tab: string }) {
     }
     setLoggingDeposit(true);
     setDepositNotice("");
-    const { error } = await supabase.rpc("log_deposit", { p_member_id: selectedMemberId, p_amount: val });
+    const { error } = await supabase.rpc("log_deposit", {
+      p_member_id: selectedMemberId,
+      p_amount: val,
+      p_occurred_at: new Date(depositDate).toISOString(),
+    });
     setLoggingDeposit(false);
     if (error) {
       setDepositNotice(error.message);
@@ -172,6 +177,7 @@ export default function OfficerView({ tab }: { tab: string }) {
     setDepositNotice("Deposit logged.");
     setSelectedMemberId("");
     setSearch("");
+    setDepositDate(new Date().toISOString().slice(0, 10));
     loadMembers();
     loadLoggedToday();
   };
@@ -319,9 +325,20 @@ export default function OfficerView({ tab }: { tab: string }) {
                 </div>
               )}
             </div>
-            <div className="field" style={{ marginBottom: 14 }}>
-              <label>Amount</label>
-              <input className="mono" value={depositAmount} onChange={(e) => setDepositAmount(e.target.value)} />
+            <div className="form-row">
+              <div className="field">
+                <label>Amount</label>
+                <input className="mono" value={depositAmount} onChange={(e) => setDepositAmount(e.target.value)} />
+              </div>
+              <div className="field">
+                <label>Date</label>
+                <input
+                  type="date"
+                  max={new Date().toISOString().slice(0, 10)}
+                  value={depositDate}
+                  onChange={(e) => setDepositDate(e.target.value)}
+                />
+              </div>
             </div>
             <button
               className="btn btn-lime"

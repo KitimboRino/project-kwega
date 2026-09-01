@@ -60,7 +60,7 @@ Open http://localhost:3000
 
 - **Officer desk** — your at-a-glance stats: accounts you manage, contributions logged today, total under your management.
 - **New account** — open a real member account: name, email (they'll get an invite email to set their own password), phone, national ID, daily amount (min 2,000 Ushs), branch, start date.
-- **Quick log contribution** — search a member you manage by name/account #, enter an amount, log the deposit.
+- **Quick log contribution** — search a member you manage by name/account #, enter an amount and a date (defaults to today, can be backdated), log the deposit.
 - **Accounts** — every member you manage, with an **Edit** action per row to update their phone/branch/national ID (not their name — only they can change that, via their own Settings).
 
 ### As an admin
@@ -68,7 +68,8 @@ Open http://localhost:3000
 - **Overview** — platform-wide totals, the cash-flow chart (real deposits vs. withdrawals, last 6 months), and funds-by-branch breakdown.
 - **All members** — every account on the platform, with **Export** to CSV.
 - **Branches** — add or remove branches; each shows its member count and funds under management. A branch with anyone still assigned to it can't be deleted.
-- **Users** — search any account (member, officer, or admin) and edit their name/phone/branch/role — this is how you promote someone to officer or admin, without touching SQL.
+- **Users** — search any account (member, officer, or admin) and edit their name/phone/branch/role — this is how you promote someone to officer or admin, without touching SQL. Also where admin does what officers do: **Open a new account** (top of the page) opens a real member account the same way an officer does, and selecting any member shows their full **Savings log** plus a **Log a contribution** field (with a date) to record a deposit for them directly — no need to go hunting in the Savings tab to see one person's history. Selecting a member also shows a **Start date** field — an admin-only correction for when a member's account genuinely started, since that drives their lock date and interest cycle.
+- **Savings** — every transaction on the platform in one table (date, member, type, amount, balance), searchable by name/account #, with **Export** to CSV. Each row has an **Edit** action to correct a mistake: the date can always be fixed; the amount can be fixed for deposits/interest (the member's balance is adjusted by the difference) but not for withdrawals, since a withdrawal doesn't record whether it drew from principal or interest — reverse and re-enter instead if a withdrawal amount was wrong.
 - **Settings** — same self-edit (name/phone/email/password) every role gets.
 - **"Run interest accrual"** button on Overview manually credits interest for any member whose 30-day cycle has elapsed, instead of waiting for the daily scheduled job.
 
@@ -94,8 +95,9 @@ src/
     MemberView.tsx        member dashboard — balance, withdraw, activity, export
     OfficerView.tsx        officer desk — open accounts, log deposits, edit members
     AdminView.tsx           admin reports — stats, cash-flow chart, branch donut, all members, export, interest accrual trigger
-    AdminUsers.tsx          admin — search/edit any account, promote roles
+    AdminUsers.tsx          admin — search/edit any account, promote roles, open accounts, log deposits
     AdminBranches.tsx       admin — add/remove branches, per-branch stats
+    AdminSavings.tsx        admin — every transaction platform-wide, export, correct mistakes
     AccountSettings.tsx     shared self-service settings (name/phone/email/password) — every role
     AuthVisual.tsx          shared illustration panel reused by all four auth pages
     Icons.tsx

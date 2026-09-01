@@ -190,7 +190,13 @@ create policy "transactions_admin_write" on public.transactions
 -- privilege escalation.
 -- ------------------------------------------------------------
 
-create or replace function public.log_deposit(p_member_id uuid, p_amount bigint)
+-- Signature is changing (adding p_occurred_at) — drop the old 2-arg
+-- version first so PostgREST doesn't end up with two ambiguous overloads.
+drop function if exists public.log_deposit(uuid, bigint);
+
+create or replace function public.log_deposit(
+  p_member_id uuid, p_amount bigint, p_occurred_at timestamptz default now()
+)
 returns public.transactions
 language plpgsql security definer set search_path = public as $$
 declare
@@ -203,11 +209,12 @@ begin
     raise exception 'Not authorized to log deposits for this member';
   end if;
   if p_amount <= 0 then raise exception 'Amount must be positive'; end if;
+  if p_occurred_at > now() then raise exception 'Cannot log a deposit in the future'; end if;
 
   update public.members set principal = principal + p_amount where id = p_member_id;
 
-  insert into public.transactions (member_id, type, amount, balance, created_by)
-  select p_member_id, 'deposit', p_amount, principal + interest, auth.uid()
+  insert into public.transactions (member_id, type, amount, balance, occurred_at, created_by)
+  select p_member_id, 'deposit', p_amount, principal + interest, p_occurred_at, auth.uid()
   from public.members where id = p_member_id
   returning * into v_txn;
 
@@ -254,9 +261,9 @@ begin
 end;
 $$;
 
-revoke all on function public.log_deposit(uuid, bigint) from public;
+revoke all on function public.log_deposit(uuid, bigint, timestamptz) from public;
 revoke all on function public.request_withdrawal(uuid, text, bigint) from public;
-grant execute on function public.log_deposit(uuid, bigint) to authenticated;
+grant execute on function public.log_deposit(uuid, bigint, timestamptz) to authenticated;
 grant execute on function public.request_withdrawal(uuid, text, bigint) to authenticated;
 
 -- ------------------------------------------------------------
@@ -288,14 +295,23 @@ $$;
 
 -- The member's own managing officer, or admin. Deliberately does NOT
 -- accept a name param — officers can never rename a member, full stop,
--- not just in the UI.
+-- not just in the UI. p_start_date is a new, optional, ADMIN-ONLY field
+-- (it drives the lock date and interest-cycle math, a heavier-weight
+-- change than phone/branch/national_id) — an officer-supplied value is
+-- simply ignored rather than erroring, so both roles can share one form.
+--
+-- Signature is changing (adding p_start_date) — drop the old 4-arg
+-- version first so PostgREST doesn't end up with two ambiguous overloads.
+drop function if exists public.update_member_details(uuid, text, text, text);
+
 create or replace function public.update_member_details(
-  p_member_id uuid, p_phone text, p_branch text, p_national_id text
+  p_member_id uuid, p_phone text, p_branch text, p_national_id text, p_start_date date default null
 )
 returns public.members
 language plpgsql security definer set search_path = public as $$
 declare
   v_member public.members;
+  v_is_admin boolean;
 begin
   select * into v_member from public.members where id = p_member_id;
   if v_member is null then raise exception 'Member not found'; end if;
@@ -303,8 +319,22 @@ begin
     raise exception 'Not authorized to edit this member';
   end if;
 
+  v_is_admin := get_my_role() = 'admin';
+
   update public.members
-  set branch = p_branch, national_id = p_national_id
+  set branch = p_branch,
+      national_id = p_national_id,
+      start_date = case when v_is_admin and p_start_date is not null then p_start_date else start_date end,
+      -- Correcting start_date also restarts the interest-cycle cursor
+      -- from the corrected date, so the next accrual run measures from
+      -- the right point. This does NOT reverse interest already credited
+      -- under the old (wrong) date — use admin_edit_transaction to zero
+      -- out an incorrect 'interest' row and adjust the balance to match,
+      -- if that's needed.
+      last_interest_at = case
+        when v_is_admin and p_start_date is not null then p_start_date::timestamptz
+        else last_interest_at
+      end
   where id = p_member_id
   returning * into v_member;
 
@@ -355,10 +385,10 @@ end;
 $$;
 
 revoke all on function public.update_own_profile(text, text) from public;
-revoke all on function public.update_member_details(uuid, text, text, text) from public;
+revoke all on function public.update_member_details(uuid, text, text, text, date) from public;
 revoke all on function public.admin_update_profile(uuid, text, text, text, text) from public;
 grant execute on function public.update_own_profile(text, text) to authenticated;
-grant execute on function public.update_member_details(uuid, text, text, text) to authenticated;
+grant execute on function public.update_member_details(uuid, text, text, text, date) to authenticated;
 grant execute on function public.admin_update_profile(uuid, text, text, text, text) to authenticated;
 
 -- ------------------------------------------------------------
@@ -464,3 +494,69 @@ select cron.schedule(
   '0 1 * * *',
   $$select public.credit_interest_cycle();$$
 );
+
+-- ------------------------------------------------------------
+-- Correcting mistakes in the ledger. Transactions are otherwise
+-- append-only (by design — an auditable log shouldn't normally be
+-- mutable), so this is a deliberately narrow, admin-only escape hatch
+-- for fixing real data-entry errors (wrong date, wrong deposit amount),
+-- not a general "edit any transaction" tool.
+--
+-- occurred_at (date) is always safe to correct — it never affects any
+-- balance. amount is only editable for 'deposit'/'interest' rows, where
+-- we know exactly which member field to reconcile by the delta.
+-- 'withdrawal' rows don't record whether they drew from principal or
+-- interest (request_withdrawal knows at the time, but the transaction
+-- row itself doesn't), so there's no safe way to adjust a withdrawal
+-- amount here — only its date. Reverse and re-enter if a withdrawal
+-- amount was wrong.
+--
+-- This only fixes the ledger for this ONE transaction; it deliberately
+-- does not attempt to recompute the `balance` snapshot stored on any
+-- OTHER (earlier or later) transaction row for the same member — those
+-- stay as a point-in-time approximation, same as everywhere else in this
+-- schema. The member's live principal/interest is always the source of
+-- truth for their actual current balance.
+create or replace function public.admin_edit_transaction(
+  p_transaction_id uuid, p_occurred_at timestamptz, p_amount bigint
+)
+returns public.transactions
+language plpgsql security definer set search_path = public as $$
+declare
+  v_txn public.transactions;
+  v_delta bigint;
+begin
+  if get_my_role() <> 'admin' then
+    raise exception 'Not authorized';
+  end if;
+
+  select * into v_txn from public.transactions where id = p_transaction_id;
+  if v_txn is null then raise exception 'Transaction not found'; end if;
+  if p_amount <= 0 then raise exception 'Amount must be positive'; end if;
+
+  if p_amount <> v_txn.amount then
+    if v_txn.type = 'withdrawal' then
+      raise exception 'Withdrawal amounts can''t be edited here, only the date — reverse and re-enter instead';
+    end if;
+
+    v_delta := p_amount - v_txn.amount;
+    if v_txn.type = 'deposit' then
+      update public.members set principal = principal + v_delta where id = v_txn.member_id;
+    else -- 'interest'
+      update public.members set interest = interest + v_delta where id = v_txn.member_id;
+    end if;
+  end if;
+
+  update public.transactions
+  set amount = p_amount,
+      occurred_at = p_occurred_at,
+      balance = (select principal + interest from public.members where id = v_txn.member_id)
+  where id = p_transaction_id
+  returning * into v_txn;
+
+  return v_txn;
+end;
+$$;
+
+revoke all on function public.admin_edit_transaction(uuid, timestamptz, bigint) from public;
+grant execute on function public.admin_edit_transaction(uuid, timestamptz, bigint) to authenticated;

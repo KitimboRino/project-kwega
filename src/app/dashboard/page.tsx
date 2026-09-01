@@ -8,6 +8,7 @@ import OfficerView from "@/components/OfficerView";
 import AdminView from "@/components/AdminView";
 import AdminUsers from "@/components/AdminUsers";
 import AdminBranches from "@/components/AdminBranches";
+import AdminSavings from "@/components/AdminSavings";
 import AccountSettings from "@/components/AccountSettings";
 
 type NavEntry = { key: string; label: string; icon: keyof typeof Icon; group: string; badge?: string };
@@ -28,6 +29,7 @@ const NAV: Record<string, NavEntry[]> = {
   admin: [
     { key: "home", label: "Overview", icon: "chart", group: "Main menu" },
     { key: "members", label: "All members", icon: "users", group: "Management" },
+    { key: "savings", label: "Savings", icon: "income", group: "Management" },
     { key: "branches", label: "Branches", icon: "shield", group: "Management" },
     { key: "users", label: "Users", icon: "users", group: "Management" },
     { key: "settings", label: "Settings", icon: "user", group: "Account" },
@@ -117,6 +119,8 @@ export default function Dashboard() {
             <AdminUsers />
           ) : tab === "branches" && user.role === "admin" ? (
             <AdminBranches />
+          ) : tab === "savings" && user.role === "admin" ? (
+            <AdminSavings />
           ) : (
             <>
               {user.role === "member" && <MemberView tab={tab} />}
