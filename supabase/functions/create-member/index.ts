@@ -28,6 +28,14 @@ const corsHeaders = {
 
 const MIN_DAILY = 2000; // keep in sync with RULES.MIN_DAILY in src/lib/data.ts
 
+// No 0/O/1/l/I — avoids anyone misreading the password when it's relayed verbally or by hand.
+const PASSWORD_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+function generateTempPassword(length = 10) {
+  let out = "";
+  for (let i = 0; i < length; i++) out += PASSWORD_CHARS[Math.floor(Math.random() * PASSWORD_CHARS.length)];
+  return out;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -68,8 +76,9 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { email, name, phone, nationalId, dailyAmount, branch, startDate, silent, initialPrincipal } =
-      await req.json();
+    const {
+      email, name, phone, nationalId, dailyAmount, branch, startDate, silent, initialPrincipal, directPassword,
+    } = await req.json();
 
     if (!email || !name || !dailyAmount || dailyAmount < MIN_DAILY || !branch) {
       return new Response(
@@ -99,6 +108,8 @@ Deno.serve(async (req) => {
     );
 
     let newUserId: string;
+    let tempPassword: string | undefined;
+
     if (silent) {
       // No email sent at all — unlike inviteUserByEmail. The email only
       // needs to be well-formed, not deliverable; nobody can sign in with
@@ -108,6 +119,29 @@ Deno.serve(async (req) => {
         email,
         email_confirm: true,
         password: crypto.randomUUID() + crypto.randomUUID(), // unusable placeholder, nobody needs to know it
+        user_metadata: { role: "member", name, phone, branch },
+      });
+      if (createErr) {
+        return new Response(JSON.stringify({ error: createErr.message }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      newUserId = created.user.id;
+    } else if (directPassword) {
+      // Bypasses email entirely — no invite sent, no domain/SMTP
+      // dependency. Creates the account with a real, immediately-usable
+      // temporary password that this function hands back in the response
+      // for the officer/admin to relay to the member directly (in person,
+      // SMS, WhatsApp, whatever) — the member can sign in right away and
+      // is expected to change it via Settings afterward. This is a "for
+      // now" workaround for unreliable email delivery, not a replacement
+      // for real invites once a verified sending domain is in place.
+      tempPassword = generateTempPassword();
+      const { data: created, error: createErr } = await admin.auth.admin.createUser({
+        email,
+        email_confirm: true,
+        password: tempPassword,
         user_metadata: { role: "member", name, phone, branch },
       });
       if (createErr) {
@@ -170,7 +204,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    return new Response(JSON.stringify({ member }), {
+    return new Response(JSON.stringify({ member, tempPassword }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

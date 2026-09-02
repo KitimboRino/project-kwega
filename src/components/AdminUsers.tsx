@@ -47,6 +47,7 @@ export default function AdminUsers() {
   const [newStartDate, setNewStartDate] = useState(new Date().toISOString().slice(0, 10));
   const [creatingAccount, setCreatingAccount] = useState(false);
   const [createNotice, setCreateNotice] = useState("");
+  const [newTempPassword, setNewTempPassword] = useState("");
 
   const loadProfiles = useCallback(async () => {
     const { data } = await supabase.from("profiles").select("id, name, phone, branch, role").order("name");
@@ -188,6 +189,11 @@ export default function AdminUsers() {
     }
     setCreatingAccount(true);
     setCreateNotice("");
+    setNewTempPassword("");
+    // directPassword: true — bypasses the invite email (unreliable while
+    // no verified sending domain is set up) and creates a real,
+    // immediately-usable login instead. Switch back to a plain invite
+    // once that's sorted (drop this flag).
     const { data, error } = await supabase.functions.invoke("clever-function", {
       body: {
         email: newEmail,
@@ -197,6 +203,7 @@ export default function AdminUsers() {
         dailyAmount: val,
         branch: newBranch,
         startDate: newStartDate,
+        directPassword: true,
       },
     });
     setCreatingAccount(false);
@@ -204,7 +211,8 @@ export default function AdminUsers() {
       setCreateNotice(data?.error ?? error?.message ?? "Could not create account.");
       return;
     }
-    setCreateNotice("Account created. The member has been emailed an invite to sign in.");
+    setCreateNotice(data?.tempPassword ? `Account created for ${newName}. Give them this password to sign in:` : "Account created.");
+    setNewTempPassword(data?.tempPassword ?? "");
     setNewName("");
     setNewEmail("");
     setNewPhone("");
@@ -224,7 +232,7 @@ export default function AdminUsers() {
 
       <div className="panel">
         <h3>Open a new account</h3>
-        <p className="hint">The member will be emailed an invite to set their own password and sign in.</p>
+        <p className="hint">You&apos;ll get a temporary password after creating — give it to the member so they can sign in right away.</p>
         <div className="form-row">
           <div className="field"><label>Full name</label><input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="e.g. Grace Nakato" /></div>
           <div className="field"><label>Email</label><input type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} placeholder="member@example.com" /></div>
@@ -253,6 +261,17 @@ export default function AdminUsers() {
         </button>
         {createNotice && (
           <p style={{ fontSize: 12.5, marginTop: 12, color: "var(--forest)", fontWeight: 600 }}>{createNotice}</p>
+        )}
+        {newTempPassword && (
+          <div
+            className="mono"
+            style={{
+              marginTop: 8, padding: "10px 14px", background: "var(--paper)", border: "1px solid var(--line)",
+              borderRadius: 10, fontSize: 15, fontWeight: 700, letterSpacing: 1, textAlign: "center",
+            }}
+          >
+            {newTempPassword}
+          </div>
         )}
       </div>
 

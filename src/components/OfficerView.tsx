@@ -52,6 +52,7 @@ export default function OfficerView({ tab }: { tab: string }) {
   const [branch, setBranch] = useState("");
   const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10));
   const [notice, setNotice] = useState("");
+  const [tempPassword, setTempPassword] = useState("");
   const [creating, setCreating] = useState(false);
 
   const [search, setSearch] = useState("");
@@ -128,15 +129,21 @@ export default function OfficerView({ tab }: { tab: string }) {
     }
     setCreating(true);
     setNotice("");
+    setTempPassword("");
+    // directPassword: true — bypasses the invite email (unreliable while
+    // no verified sending domain is set up) and creates a real,
+    // immediately-usable login instead. Switch back to a plain
+    // invite once that's sorted (drop this flag).
     const { data, error } = await supabase.functions.invoke("clever-function", {
-      body: { email, name, phone, nationalId, dailyAmount: val, branch, startDate },
+      body: { email, name, phone, nationalId, dailyAmount: val, branch, startDate, directPassword: true },
     });
     setCreating(false);
     if (error || data?.error) {
       setNotice(data?.error ?? error?.message ?? "Could not create account.");
       return;
     }
-    setNotice("Account created. The member has been emailed an invite to sign in.");
+    setNotice(data?.tempPassword ? `Account created for ${name}. Give them this password to sign in:` : "Account created.");
+    setTempPassword(data?.tempPassword ?? "");
     setName("");
     setEmail("");
     setPhone("");
@@ -261,7 +268,7 @@ export default function OfficerView({ tab }: { tab: string }) {
         <div className="grid g2 section-gap">
           <div className="panel">
             <h3>Open a new account</h3>
-            <p className="hint">The member will be emailed an invite to set their own password and sign in.</p>
+            <p className="hint">You&apos;ll get a temporary password after creating — give it to the member so they can sign in right away.</p>
             <div className="form-row">
               <div className="field"><label>Full name</label><input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Grace Nakato" /></div>
               <div className="field"><label>Email</label><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="member@example.com" /></div>
@@ -295,6 +302,17 @@ export default function OfficerView({ tab }: { tab: string }) {
             </button>
             {notice && (
               <p style={{ fontSize: 12.5, marginTop: 12, color: "var(--forest)", fontWeight: 600 }}>{notice}</p>
+            )}
+            {tempPassword && (
+              <div
+                className="mono"
+                style={{
+                  marginTop: 8, padding: "10px 14px", background: "var(--paper)", border: "1px solid var(--line)",
+                  borderRadius: 10, fontSize: 15, fontWeight: 700, letterSpacing: 1, textAlign: "center",
+                }}
+              >
+                {tempPassword}
+              </div>
             )}
           </div>
 
