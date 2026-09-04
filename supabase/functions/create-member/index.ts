@@ -78,7 +78,50 @@ Deno.serve(async (req) => {
 
     const {
       email, name, phone, nationalId, dailyAmount, branch, startDate, silent, initialPrincipal, directPassword,
+      resetPasswordFor, newEmail,
     } = await req.json();
+
+    // Reset-password path: generates a fresh, immediately-usable password
+    // for an EXISTING account (e.g. one of the batch-seeded members who
+    // never got a real login) and optionally corrects a placeholder email
+    // to a real one at the same time. Short-circuits before the "open a
+    // new account" validation/creation logic below — nothing there applies.
+    if (resetPasswordFor) {
+      if (callerProfile.role === "officer") {
+        const { data: managed } = await callerClient
+          .from("members")
+          .select("id")
+          .eq("id", resetPasswordFor)
+          .eq("officer_id", caller.id)
+          .maybeSingle();
+        if (!managed) {
+          return new Response(JSON.stringify({ error: "You can only reset passwords for members you manage" }), {
+            status: 403,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      }
+
+      const admin = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+      );
+      const tempPassword = generateTempPassword();
+      const updatePayload: Record<string, unknown> = { password: tempPassword, email_confirm: true };
+      if (newEmail) updatePayload.email = newEmail;
+
+      const { error: updErr } = await admin.auth.admin.updateUserById(resetPasswordFor, updatePayload);
+      if (updErr) {
+        return new Response(JSON.stringify({ error: updErr.message }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ tempPassword }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     if (!email || !name || !dailyAmount || dailyAmount < MIN_DAILY || !branch) {
       return new Response(

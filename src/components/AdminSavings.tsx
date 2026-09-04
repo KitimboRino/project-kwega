@@ -12,6 +12,7 @@ type TxnRow = {
   amount: number;
   balance: number;
   occurred_at: string;
+  withdrawal_kind: string | null;
   members: { account_no: string; profiles: { name: string } | null } | null;
 };
 
@@ -26,11 +27,13 @@ export default function AdminSavings() {
   const [editAmount, setEditAmount] = useState("");
   const [editSaving, setEditSaving] = useState(false);
   const [editNotice, setEditNotice] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [listNotice, setListNotice] = useState("");
 
   const load = useCallback(async () => {
     const { data } = await supabase
       .from("transactions")
-      .select("id, type, amount, balance, occurred_at, members(account_no, profiles!members_id_fkey(name))")
+      .select("id, type, amount, balance, occurred_at, withdrawal_kind, members(account_no, profiles!members_id_fkey(name))")
       .order("occurred_at", { ascending: false })
       .limit(500);
     if (data) setTxns(data as unknown as TxnRow[]);
@@ -47,6 +50,12 @@ export default function AdminSavings() {
     const acc = t.members?.account_no ?? "";
     return name.toLowerCase().includes(search.toLowerCase()) || acc.toLowerCase().includes(search.toLowerCase());
   });
+
+  // A withdrawal logged before withdrawal_kind existed doesn't record
+  // which bucket it drew from, so its amount can't be safely corrected
+  // or the row safely deleted — only the date, for those old rows.
+  const canEditAmount = (t: TxnRow) => t.type !== "withdrawal" || t.withdrawal_kind !== null;
+  const canDelete = (t: TxnRow) => t.type !== "withdrawal" || t.withdrawal_kind !== null;
 
   const startEdit = (t: TxnRow) => {
     setEditing(t);
@@ -65,9 +74,9 @@ export default function AdminSavings() {
     setEditSaving(true);
     setEditNotice("");
     // Reconstruct the correctly-signed amount (withdrawals are stored
-    // negative) — for withdrawals the amount field stays disabled/
-    // unchanged, so this always resolves back to the original value and
-    // the RPC only applies the date correction, per its own restriction.
+    // negative) — when amount editing is disabled (untracked withdrawal),
+    // this always resolves back to the original value, so the RPC only
+    // applies the date correction.
     const signedAmount = editing.type === "withdrawal" ? -val : val;
     const { error } = await supabase.rpc("admin_edit_transaction", {
       p_transaction_id: editing.id,
@@ -80,6 +89,23 @@ export default function AdminSavings() {
       return;
     }
     setEditing(null);
+    load();
+  };
+
+  const handleDelete = async (t: TxnRow) => {
+    const who = t.members?.profiles?.name ?? "this member";
+    if (!window.confirm(`Delete this ${t.type} of ${fmt(Math.abs(t.amount))} Ushs for ${who}? Their balance will be adjusted back. This can't be undone.`)) {
+      return;
+    }
+    setDeletingId(t.id);
+    setListNotice("");
+    const { error } = await supabase.rpc("admin_delete_transaction", { p_transaction_id: t.id });
+    setDeletingId(null);
+    if (error) {
+      setListNotice(error.message);
+      return;
+    }
+    if (editing?.id === t.id) setEditing(null);
     load();
   };
 
@@ -124,13 +150,17 @@ export default function AdminSavings() {
         />
       </div>
 
+      {listNotice && (
+        <p style={{ fontSize: 12.5, marginBottom: 16, color: "var(--danger)", fontWeight: 600 }}>{listNotice}</p>
+      )}
+
       {editing && (
         <div className="panel section-gap" style={{ marginBottom: 16 }}>
           <h3>Edit transaction</h3>
           <p className="hint">
-            {editing.type === "withdrawal"
-              ? "Only the date can be corrected for withdrawals — reverse and re-enter if the amount itself was wrong."
-              : "Date and amount can both be corrected. The member's balance is adjusted by the difference."}
+            {canEditAmount(editing)
+              ? "Date and amount can both be corrected. The member's balance is adjusted by the difference."
+              : "This withdrawal predates bucket tracking — only the date can be corrected. Reverse and re-enter instead if the amount itself was wrong."}
           </p>
           <div className="form-row">
             <div className="field">
@@ -147,7 +177,7 @@ export default function AdminSavings() {
               <input
                 className="mono"
                 value={editAmount}
-                disabled={editing.type === "withdrawal"}
+                disabled={!canEditAmount(editing)}
                 onChange={(e) => setEditAmount(e.target.value)}
               />
             </div>
@@ -192,9 +222,20 @@ export default function AdminSavings() {
                 </td>
                 <td className="num">{fmt(t.balance)}</td>
                 <td>
-                  <button className="btn btn-ghost" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => startEdit(t)}>
-                    {Icon.edit} Edit
-                  </button>
+                  <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                    <button className="btn btn-ghost" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => startEdit(t)}>
+                      {Icon.edit} Edit
+                    </button>
+                    <button
+                      className="btn btn-ghost"
+                      style={{ padding: "4px 10px", fontSize: 12, color: "var(--danger)" }}
+                      onClick={() => handleDelete(t)}
+                      disabled={deletingId === t.id || !canDelete(t)}
+                      title={canDelete(t) ? undefined : "Predates bucket tracking — can't be safely deleted"}
+                    >
+                      {deletingId === t.id ? "Deleting…" : "Delete"}
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}

@@ -31,6 +31,13 @@ export default function AdminUsers() {
   const [notice, setNotice] = useState("");
   const selectRequestId = useRef(0);
 
+  // Give an existing account (e.g. one of the batch-seeded members who
+  // never got a real login) a fresh, immediately-usable password.
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetting, setResetting] = useState(false);
+  const [resetNotice, setResetNotice] = useState("");
+  const [resetTempPassword, setResetTempPassword] = useState("");
+
   // Log a contribution against whichever user is currently selected below.
   const [depositAmount, setDepositAmount] = useState("2,000");
   const [depositDate, setDepositDate] = useState(new Date().toISOString().slice(0, 10));
@@ -88,6 +95,9 @@ export default function AdminUsers() {
     setDepositAmount("2,000");
     setDepositDate(new Date().toISOString().slice(0, 10));
     setDepositNotice("");
+    setResetEmail("");
+    setResetNotice("");
+    setResetTempPassword("");
 
     if (p.role === "member") {
       const [memberRes, txnsRes] = await Promise.all([
@@ -175,6 +185,27 @@ export default function AdminUsers() {
       .eq("member_id", selected.id)
       .order("occurred_at", { ascending: false });
     if (data) setMemberTxns(data as TxnRow[]);
+  };
+
+  const handleResetPassword = async () => {
+    if (!selected) return;
+    setResetting(true);
+    setResetNotice("");
+    setResetTempPassword("");
+    const { data, error } = await supabase.functions.invoke("clever-function", {
+      body: {
+        resetPasswordFor: selected.id,
+        newEmail: resetEmail.trim() || undefined,
+      },
+    });
+    setResetting(false);
+    if (error || data?.error) {
+      setResetNotice(data?.error ?? error?.message ?? "Could not set a password.");
+      return;
+    }
+    setResetNotice(`New password for ${selected.name}${resetEmail.trim() ? ` (signs in as ${resetEmail.trim()} now)` : ""}:`);
+    setResetTempPassword(data?.tempPassword ?? "");
+    setResetEmail("");
   };
 
   const handleCreateAccount = async () => {
@@ -448,6 +479,43 @@ export default function AdminUsers() {
               {notice && (
                 <p style={{ fontSize: 12.5, marginTop: 12, color: "var(--forest)", fontWeight: 600 }}>{notice}</p>
               )}
+
+              <div style={{ borderTop: "1px solid var(--line)", paddingTop: 16, marginTop: 20 }}>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--muted-ink)", marginBottom: 6 }}>
+                  Set / reset password
+                </label>
+                <p className="hint" style={{ marginBottom: 10 }}>
+                  For accounts that never got a real login (e.g. batch-imported members) — generates a new password
+                  shown on screen, no email needed. Optionally fix a placeholder email first, since that&apos;s what
+                  they&apos;ll sign in with.
+                </p>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <input
+                    type="email"
+                    placeholder="Replace placeholder email (optional)"
+                    style={{ flex: 1, minWidth: 220, padding: "11px 13px", border: "1px solid var(--line)", borderRadius: 11, background: "var(--paper)" }}
+                    value={resetEmail}
+                    onChange={(e) => setResetEmail(e.target.value)}
+                  />
+                  <button className="btn btn-ghost" onClick={handleResetPassword} disabled={resetting}>
+                    {resetting ? "Setting…" : "Set new password"}
+                  </button>
+                </div>
+                {resetNotice && (
+                  <p style={{ fontSize: 12.5, marginTop: 10, color: "var(--forest)", fontWeight: 600 }}>{resetNotice}</p>
+                )}
+                {resetTempPassword && (
+                  <div
+                    className="mono"
+                    style={{
+                      marginTop: 8, padding: "10px 14px", background: "var(--paper)", border: "1px solid var(--line)",
+                      borderRadius: 10, fontSize: 15, fontWeight: 700, letterSpacing: 1, textAlign: "center",
+                    }}
+                  >
+                    {resetTempPassword}
+                  </div>
+                )}
+              </div>
             </>
           )}
         </div>

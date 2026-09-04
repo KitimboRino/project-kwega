@@ -222,6 +222,11 @@ begin
 end;
 $$;
 
+-- Tracks which bucket a withdrawal drew from, so admin_edit_transaction /
+-- admin_delete_transaction can correct or undo it safely later — the
+-- type column ('withdrawal') alone doesn't carry that.
+alter table public.transactions add column if not exists withdrawal_kind text check (withdrawal_kind in ('principal', 'interest'));
+
 create or replace function public.request_withdrawal(p_member_id uuid, p_kind text, p_amount bigint)
 returns public.transactions
 language plpgsql security definer set search_path = public as $$
@@ -252,8 +257,12 @@ begin
     update public.members set principal = principal - p_amount where id = p_member_id;
   end if;
 
-  insert into public.transactions (member_id, type, amount, balance, created_by)
-  select p_member_id, 'withdrawal', -p_amount, principal + interest, auth.uid()
+  -- withdrawal_kind records which bucket this drew from, so a later
+  -- correction/deletion (admin_edit_transaction / admin_delete_transaction)
+  -- knows which balance to reconcile — the type column alone ('withdrawal')
+  -- doesn't carry that.
+  insert into public.transactions (member_id, type, amount, balance, withdrawal_kind, created_by)
+  select p_member_id, 'withdrawal', -p_amount, principal + interest, p_kind, auth.uid()
   from public.members where id = p_member_id
   returning * into v_txn;
 
@@ -498,25 +507,23 @@ select cron.schedule(
 -- ------------------------------------------------------------
 -- Correcting mistakes in the ledger. Transactions are otherwise
 -- append-only (by design — an auditable log shouldn't normally be
--- mutable), so this is a deliberately narrow, admin-only escape hatch
--- for fixing real data-entry errors (wrong date, wrong deposit amount),
--- not a general "edit any transaction" tool.
+-- mutable), so these are deliberately narrow, admin-only escape hatches
+-- for fixing real data-entry errors, not general "edit/delete anything"
+-- tools.
 --
 -- occurred_at (date) is always safe to correct — it never affects any
--- balance. amount is only editable for 'deposit'/'interest' rows, where
--- we know exactly which member field to reconcile by the delta.
--- 'withdrawal' rows don't record whether they drew from principal or
--- interest (request_withdrawal knows at the time, but the transaction
--- row itself doesn't), so there's no safe way to adjust a withdrawal
--- amount here — only its date. Reverse and re-enter if a withdrawal
--- amount was wrong.
+-- balance. amount is editable for 'deposit'/'interest' rows (adjusts
+-- principal/interest by the delta) and, now that request_withdrawal
+-- records withdrawal_kind, for 'withdrawal' rows too — except ones
+-- logged BEFORE that column existed, where withdrawal_kind is null and
+-- we genuinely don't know which bucket to reconcile; those can still
+-- only have their date corrected.
 --
--- This only fixes the ledger for this ONE transaction; it deliberately
--- does not attempt to recompute the `balance` snapshot stored on any
--- OTHER (earlier or later) transaction row for the same member — those
--- stay as a point-in-time approximation, same as everywhere else in this
--- schema. The member's live principal/interest is always the source of
--- truth for their actual current balance.
+-- Neither function attempts to recompute the `balance` snapshot stored
+-- on any OTHER (earlier or later) transaction row for the same member —
+-- those stay as a point-in-time approximation, same as everywhere else
+-- in this schema. The member's live principal/interest is always the
+-- source of truth for their actual current balance.
 create or replace function public.admin_edit_transaction(
   p_transaction_id uuid, p_occurred_at timestamptz, p_amount bigint
 )
@@ -532,17 +539,17 @@ begin
 
   select * into v_txn from public.transactions where id = p_transaction_id;
   if v_txn is null then raise exception 'Transaction not found'; end if;
-  if p_amount <= 0 then raise exception 'Amount must be positive'; end if;
+  if p_amount = 0 then raise exception 'Amount can''t be zero'; end if;
 
   if p_amount <> v_txn.amount then
-    if v_txn.type = 'withdrawal' then
-      raise exception 'Withdrawal amounts can''t be edited here, only the date — reverse and re-enter instead';
+    if v_txn.type = 'withdrawal' and v_txn.withdrawal_kind is null then
+      raise exception 'This withdrawal predates bucket tracking — only its date can be corrected. Reverse and re-enter instead.';
     end if;
 
     v_delta := p_amount - v_txn.amount;
-    if v_txn.type = 'deposit' then
+    if v_txn.type = 'deposit' or v_txn.withdrawal_kind = 'principal' then
       update public.members set principal = principal + v_delta where id = v_txn.member_id;
-    else -- 'interest'
+    else -- 'interest' type, or withdrawal_kind = 'interest'
       update public.members set interest = interest + v_delta where id = v_txn.member_id;
     end if;
   end if;
@@ -557,6 +564,44 @@ begin
   return v_txn;
 end;
 $$;
+
+-- Deletes a transaction entirely, undoing its full effect on the
+-- member's balance first. Same withdrawal_kind restriction as above —
+-- a pre-tracking withdrawal can't be safely undone, so it can't be
+-- deleted through this function; log a compensating entry instead.
+create or replace function public.admin_delete_transaction(p_transaction_id uuid)
+returns void
+language plpgsql security definer set search_path = public as $$
+declare
+  v_txn public.transactions;
+begin
+  if get_my_role() <> 'admin' then
+    raise exception 'Not authorized';
+  end if;
+
+  select * into v_txn from public.transactions where id = p_transaction_id;
+  if v_txn is null then raise exception 'Transaction not found'; end if;
+
+  if v_txn.type = 'withdrawal' and v_txn.withdrawal_kind is null then
+    raise exception 'This withdrawal predates bucket tracking and can''t be safely deleted — log a compensating entry instead.';
+  end if;
+
+  -- amount already carries the correct sign for what it originally did
+  -- to the bucket (positive = added, negative = removed), so subtracting
+  -- it undoes that effect exactly, for either a deposit/interest credit
+  -- or a withdrawal from either bucket.
+  if v_txn.type = 'deposit' or v_txn.withdrawal_kind = 'principal' then
+    update public.members set principal = principal - v_txn.amount where id = v_txn.member_id;
+  else -- 'interest' type, or withdrawal_kind = 'interest'
+    update public.members set interest = interest - v_txn.amount where id = v_txn.member_id;
+  end if;
+
+  delete from public.transactions where id = p_transaction_id;
+end;
+$$;
+
+revoke all on function public.admin_delete_transaction(uuid) from public;
+grant execute on function public.admin_delete_transaction(uuid) to authenticated;
 
 revoke all on function public.admin_edit_transaction(uuid, timestamptz, bigint) from public;
 grant execute on function public.admin_edit_transaction(uuid, timestamptz, bigint) to authenticated;
