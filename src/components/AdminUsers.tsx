@@ -467,17 +467,17 @@ export default function AdminUsers({
                     <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--muted-ink)", marginBottom: 6 }}>
                       Log a contribution
                     </label>
-                    <div style={{ display: "flex", gap: 10 }}>
+                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                       <input
-                        className="mono"
-                        style={{ flex: 1, padding: "11px 13px", border: "1px solid var(--line)", borderRadius: 11, background: "var(--paper)" }}
+                        className="inline-input mono"
+                        style={{ flex: 1, minWidth: 120 }}
                         value={depositAmount}
                         onChange={(e) => setDepositAmount(e.target.value)}
                       />
                       <input
                         type="date"
                         max={new Date().toISOString().slice(0, 10)}
-                        style={{ padding: "11px 13px", border: "1px solid var(--line)", borderRadius: 11, background: "var(--paper)" }}
+                        className="inline-input"
                         value={depositDate}
                         onChange={(e) => setDepositDate(e.target.value)}
                       />
@@ -512,7 +512,8 @@ export default function AdminUsers({
                   <input
                     type="email"
                     placeholder="Replace placeholder email (optional)"
-                    style={{ flex: 1, minWidth: 220, padding: "11px 13px", border: "1px solid var(--line)", borderRadius: 11, background: "var(--paper)" }}
+                    className="inline-input"
+                    style={{ flex: 1, minWidth: 220 }}
                     value={resetEmail}
                     onChange={(e) => setResetEmail(e.target.value)}
                   />
