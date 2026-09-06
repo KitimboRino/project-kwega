@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { fmt } from "@/lib/data";
 import { Icon } from "@/components/Icons";
+import { Loader } from "@/components/Loader";
 
 type BranchRow = { name: string; memberCount: number; funds: number };
 
@@ -78,7 +79,7 @@ export default function AdminBranches() {
     load();
   };
 
-  if (loading) return <div style={{ padding: 40, color: "var(--muted)" }}>Loading…</div>;
+  if (loading) return <Loader />;
 
   return (
     <>

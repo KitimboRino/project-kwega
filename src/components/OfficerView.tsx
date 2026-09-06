@@ -36,7 +36,15 @@ function mapRow(row: MemberRow, officerName: string): Member {
 
 type LoggedEntry = { id: string; memberName: string; accountNo: string; amount: number };
 
-export default function OfficerView({ tab }: { tab: string }) {
+export default function OfficerView({
+  tab,
+  jumpToMemberId,
+  jumpNonce,
+}: {
+  tab: string;
+  jumpToMemberId?: string | null;
+  jumpNonce?: number | null;
+}) {
   const { user } = useAuth();
   const supabase = createClient();
 
@@ -200,6 +208,17 @@ export default function OfficerView({ tab }: { tab: string }) {
     if (requestId !== editRequestId.current) return; // a newer edit click happened while this was in flight
     setEditNationalId(data?.national_id ?? "");
   };
+
+  // Landed here from the global search (⌘K) with a specific member to jump
+  // to — myMembers is already loaded for the officer's whole dashboard
+  // session (this component stays mounted across tab switches), so the
+  // lookup below is safe as soon as the nonce changes.
+  useEffect(() => {
+    if (!jumpToMemberId) return;
+    const m = myMembers.find((mm) => mm.id === jumpToMemberId);
+    if (m) startEdit(m);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jumpNonce]);
 
   const handleSaveMemberEdit = async () => {
     if (!editingMember) return;

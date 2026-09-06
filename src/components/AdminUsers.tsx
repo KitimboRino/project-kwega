@@ -9,7 +9,13 @@ import { Icon } from "@/components/Icons";
 type ProfileRow = { id: string; name: string; phone: string | null; branch: string | null; role: Role };
 type TxnRow = { id: string; type: string; amount: number; balance: number; occurred_at: string };
 
-export default function AdminUsers() {
+export default function AdminUsers({
+  jumpToUserId,
+  jumpNonce,
+}: {
+  jumpToUserId?: string | null;
+  jumpNonce?: number | null;
+}) {
   const { user } = useAuth();
   const supabase = createClient();
 
@@ -118,6 +124,19 @@ export default function AdminUsers() {
       if (txnsRes.data) setMemberTxns(txnsRes.data as TxnRow[]);
     }
   };
+
+  // Landed here from the global search (⌘K) with a specific user to jump
+  // to — fetch that profile fresh rather than relying on `profiles` having
+  // finished loading yet (this component only mounts once the Users tab
+  // is active, so a jump can arrive at the same moment as the initial load).
+  useEffect(() => {
+    if (!jumpToUserId) return;
+    (async () => {
+      const { data } = await supabase.from("profiles").select("id, name, phone, branch, role").eq("id", jumpToUserId).maybeSingle();
+      if (data) select(data as ProfileRow);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jumpNonce]);
 
   const save = async () => {
     if (!selected) return;

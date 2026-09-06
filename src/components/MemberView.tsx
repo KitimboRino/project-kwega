@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { fmt, isLocked, unlockDate, type Member } from "@/lib/data";
 import { downloadCSV } from "@/lib/csv";
 import { Icon } from "@/components/Icons";
+import { Loader } from "@/components/Loader";
 
 type MemberRow = {
   account_no: string;
@@ -102,7 +103,7 @@ export default function MemberView({ tab }: { tab: string }) {
     }
   };
 
-  if (loading) return <div style={{ padding: 40, color: "var(--muted)" }}>Loading…</div>;
+  if (loading) return <Loader />;
   if (error && !me) return <div style={{ padding: 40, color: "var(--danger)" }}>{error}</div>;
   if (!me) {
     return (

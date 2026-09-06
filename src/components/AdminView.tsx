@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { fmt, fmtShort, isLocked, type Member } from "@/lib/data";
 import { downloadCSV } from "@/lib/csv";
 import { Icon } from "@/components/Icons";
+import { Loader } from "@/components/Loader";
 
 type MemberRow = {
   id: string;
@@ -144,7 +145,7 @@ export default function AdminView({ tab }: { tab: string }) {
       }).join(", ")
     : "var(--line) 0% 100%";
 
-  if (loading) return <div style={{ padding: 40, color: "var(--muted)" }}>Loading…</div>;
+  if (loading) return <Loader />;
 
   return (
     <>
@@ -157,7 +158,6 @@ export default function AdminView({ tab }: { tab: string }) {
           <button className="btn btn-ghost" onClick={handleRunAccrual} disabled={accruing}>
             {accruing ? "Running…" : "Run interest accrual"}
           </button>
-          <button className="btn btn-ghost">Compare</button>
           <button
             className="btn btn-primary"
             onClick={() =>

@@ -35,6 +35,7 @@ Open http://localhost:3000
 - `middleware.ts` refreshes the session on every request and redirects signed-out users away from `/dashboard`. This is UX-level only.
 - The **real** enforcement is Postgres Row Level Security (`supabase/schema.sql`) — a member's queries can only ever return their own `members`/`transactions` rows, an officer's only the members they manage, regardless of what the UI does. Money movement (deposits, withdrawals, interest accrual) and every profile edit (self, officer-on-a-member, admin-on-anyone) go through `SECURITY DEFINER` RPCs, not raw client inserts/updates — this is what makes rules like the min-daily amount, the 1-year principal lock, "officers can't rename a member," and "admins can't self-demote" unbypassable, not just hidden in the UI.
 - The dashboard renders **only** the view matching the user's role. The sidebar nav is also role-specific.
+- **Global search (⌘K / Ctrl+K)** — officer and admin only (a member has just their own single account, nothing to search, so it's hidden for them rather than shipped as dead UI). Click the topbar search bar, or press ⌘K, to open it: officers search only the members they manage, admins search every account on the platform (member, officer, or admin) by name, role, or account #. Picking a result jumps straight to that person's edit panel (Accounts tab for an officer, Users tab for an admin) — no need to navigate and re-search manually.
 
 ## Who sees what
 
@@ -100,6 +101,8 @@ src/
     AdminSavings.tsx        admin — every transaction platform-wide, export, correct mistakes
     AccountSettings.tsx     shared self-service settings (name/phone/email/password) — every role
     AuthVisual.tsx          shared illustration panel reused by all four auth pages
+    GlobalSearch.tsx        ⌘K search modal — officer/admin only, jumps to a member/user's edit panel
+    Loader.tsx              shared loading indicator (branded full-page variant + inline panel variant)
     Icons.tsx
   context/AuthContext.tsx
   lib/
@@ -119,7 +122,7 @@ supabase/
 - **Withdrawals** now support a partial amount (with a "Max" quick-fill) instead of always withdrawing the full balance.
 - **Admin cash-flow chart** is now live (real `transactions` grouped by month, last 6 months) — it'll look sparse until there's real transaction volume, which is expected, not a bug.
 - **Trend badges** (e.g. "+12%") were removed rather than left fake — true period-over-period trends need a snapshot table.
-- **Export** (member activity, admin all-members) downloads a real CSV of what's on screen (`src/lib/csv.ts`). Guards against CSV/formula injection — a text cell starting with `=`, `+`, `-`, `@`, tab, or CR (e.g. a member setting their own name to a formula via Settings) is neutralized before export, so opening the file in Excel/Sheets can't execute anything. Admin's "Compare" button is still decorative — no defined comparison target yet.
+- **Export** (member activity, admin all-members) downloads a real CSV of what's on screen (`src/lib/csv.ts`). Guards against CSV/formula injection — a text cell starting with `=`, `+`, `-`, `@`, tab, or CR (e.g. a member setting their own name to a formula via Settings) is neutralized before export, so opening the file in Excel/Sheets can't execute anything.
 - **Mobile responsive** — sidebar collapses to a horizontal icon strip, grids stack to one column, tables scroll horizontally instead of squeezing illegibly, and there's a dedicated `≤480px` breakpoint for phones on top of the `≤760px`/`≤1000px` tablet breakpoints (`src/app/globals.css`). Audited against everything built this session, not just the original views.
 - **Domain verification for email** is still not done — password resets only reliably reach your own email until a custom domain is verified with the SMTP provider (see setup notes above). Member account creation currently works around this: **"Open a new account" (both officer and admin) now generates a temporary password shown on screen instead of emailing an invite** — the officer/admin relays it to the member directly (in person, SMS, WhatsApp), and the member is expected to change it via Settings after their first sign-in. This is a deliberate "for now" workaround (`directPassword: true` in `create-member`'s Edge Function) — once a domain is verified, switch both forms back to the plain invite flow by dropping that flag, since a real invite (member sets their own password, nobody else ever knows it) is the better long-term default.
 - **No automated tests** exist anywhere in the project — RLS policies and RPCs (including all money-movement logic) have only been verified manually/via ad-hoc API calls. Worth setting up before this handles real money at any scale.

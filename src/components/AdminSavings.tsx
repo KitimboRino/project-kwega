@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { fmt } from "@/lib/data";
 import { downloadCSV } from "@/lib/csv";
 import { Icon } from "@/components/Icons";
+import { Loader } from "@/components/Loader";
 
 type TxnRow = {
   id: string;
@@ -109,7 +110,7 @@ export default function AdminSavings() {
     load();
   };
 
-  if (loading) return <div style={{ padding: 40, color: "var(--muted)" }}>Loading…</div>;
+  if (loading) return <Loader />;
 
   return (
     <>

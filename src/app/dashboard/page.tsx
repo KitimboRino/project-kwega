@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { Icon } from "@/components/Icons";
 import MemberView from "@/components/MemberView";
@@ -10,6 +10,8 @@ import AdminUsers from "@/components/AdminUsers";
 import AdminBranches from "@/components/AdminBranches";
 import AdminSavings from "@/components/AdminSavings";
 import AccountSettings from "@/components/AccountSettings";
+import GlobalSearch from "@/components/GlobalSearch";
+import { Loader } from "@/components/Loader";
 
 type NavEntry = { key: string; label: string; icon: keyof typeof Icon; group: string; badge?: string };
 
@@ -39,16 +41,40 @@ const NAV: Record<string, NavEntry[]> = {
 export default function Dashboard() {
   const { user, loading, logout } = useAuth();
   const [tab, setTab] = useState("home");
+  const [searchOpen, setSearchOpen] = useState(false);
+  // A nonce alongside the id, not just the id, so jumping to the same
+  // person twice in a row still re-triggers the effect that consumes it.
+  const [jump, setJump] = useState<{ id: string; nonce: number } | null>(null);
+
+  // Global search is only meaningful for officer/admin — a member has just
+  // their own single account, nothing to search. Only they get ⌘K.
+  const canSearch = !!user && user.role !== "member";
+  useEffect(() => {
+    if (!canSearch) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [canSearch]);
 
   // middleware.ts owns the real signed-out -> "/" redirect; this is just
   // the brief loading state before the client picks up the session.
   if (loading || !user) {
-    return <div style={{ padding: 40, color: "var(--muted)" }}>Loading…</div>;
+    return <Loader full label="Loading your dashboard…" />;
   }
 
   const nav = NAV[user.role];
   const groups = Array.from(new Set(nav.map((n) => n.group)));
   const initials = user.name.split(" ").map((w) => w[0]).join("").slice(0, 2);
+
+  const handleJump = (id: string) => {
+    setTab(user.role === "admin" ? "users" : "accounts");
+    setJump({ id, nonce: Date.now() });
+  };
 
   return (
     <div className="shell">
@@ -59,12 +85,6 @@ export default function Dashboard() {
             <b>Kiyemba</b>
             <span>Savings</span>
           </div>
-        </div>
-
-        <div className="side-search">
-          {Icon.search}
-          <span>Search</span>
-          <span className="kbd">⌘K</span>
         </div>
 
         {groups.map((g) => (
@@ -103,10 +123,15 @@ export default function Dashboard() {
 
       <main className="main">
         <div className="topbar">
-          <div className="search-full">
-            {Icon.search}
-            <span>Search members, transactions…</span>
-          </div>
+          {canSearch ? (
+            <div className="search-full" onClick={() => setSearchOpen(true)} role="button" tabIndex={0}>
+              {Icon.search}
+              <span>Search {user.role === "officer" ? "your members" : "members, officers, admins"}…</span>
+              <span className="kbd">⌘K</span>
+            </div>
+          ) : (
+            <div />
+          )}
           <div className="head-actions">
             <button className="btn btn-ghost">Last 6 months</button>
           </div>
@@ -116,7 +141,7 @@ export default function Dashboard() {
           {tab === "settings" ? (
             <AccountSettings />
           ) : tab === "users" && user.role === "admin" ? (
-            <AdminUsers />
+            <AdminUsers jumpToUserId={jump?.id ?? null} jumpNonce={jump?.nonce ?? null} />
           ) : tab === "branches" && user.role === "admin" ? (
             <AdminBranches />
           ) : tab === "savings" && user.role === "admin" ? (
@@ -124,12 +149,24 @@ export default function Dashboard() {
           ) : (
             <>
               {user.role === "member" && <MemberView tab={tab} />}
-              {user.role === "officer" && <OfficerView tab={tab} />}
+              {user.role === "officer" && (
+                <OfficerView tab={tab} jumpToMemberId={jump?.id ?? null} jumpNonce={jump?.nonce ?? null} />
+              )}
               {user.role === "admin" && <AdminView tab={tab} />}
             </>
           )}
         </div>
       </main>
+
+      {canSearch && (
+        <GlobalSearch
+          role={user.role as "officer" | "admin"}
+          officerId={user.role === "officer" ? user.id : undefined}
+          open={searchOpen}
+          onClose={() => setSearchOpen(false)}
+          onJump={handleJump}
+        />
+      )}
     </div>
   );
 }
