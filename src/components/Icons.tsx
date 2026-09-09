@@ -83,4 +83,16 @@ export const Icon = {
       <path d="M18 6L6 18M6 6l12 12" />
     </svg>
   ),
+  eye: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  ),
+  eyeOff: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M17.4 17.4A10.6 10.6 0 0112 19c-7 0-10.5-7-10.5-7a18.9 18.9 0 014.15-5.4M9.9 4.6A9.4 9.4 0 0112 4.5c7 0 10.5 7 10.5 7a18.8 18.8 0 01-2.16 3.19M14.1 14.1a3 3 0 10-4.2-4.2" />
+      <path d="M1.5 1.5l21 21" />
+    </svg>
+  ),
 };

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { Icon } from "@/components/Icons";
 import AuthVisual from "@/components/AuthVisual";
+import PasswordInput from "@/components/PasswordInput";
 
 export default function LoginPage() {
   const { signIn } = useAuth();
@@ -49,8 +50,7 @@ export default function LoginPage() {
             </div>
             <div className="field" style={{ marginBottom: 14 }}>
               <label>Password</label>
-              <input
-                type="password"
+              <PasswordInput
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}

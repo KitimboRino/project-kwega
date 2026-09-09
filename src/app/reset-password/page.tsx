@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import AuthVisual from "@/components/AuthVisual";
+import PasswordInput from "@/components/PasswordInput";
 
 export default function ResetPasswordPage() {
   const supabase = createClient();
@@ -94,8 +95,7 @@ export default function ResetPasswordPage() {
               <p className="sub">Choose a new password for your account.</p>
               <div className="field" style={{ marginBottom: 14 }}>
                 <label>New password</label>
-                <input
-                  type="password"
+                <PasswordInput
                   required
                   minLength={6}
                   value={password}
@@ -105,8 +105,7 @@ export default function ResetPasswordPage() {
               </div>
               <div className="field" style={{ marginBottom: 14 }}>
                 <label>Confirm password</label>
-                <input
-                  type="password"
+                <PasswordInput
                   required
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}

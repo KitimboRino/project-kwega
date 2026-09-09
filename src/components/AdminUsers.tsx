@@ -5,9 +5,9 @@ import { useAuth } from "@/context/AuthContext";
 import { createClient } from "@/lib/supabase/client";
 import { RULES, fmt, type Role } from "@/lib/data";
 import { Icon } from "@/components/Icons";
+import TransactionLog, { type LogTxn } from "@/components/TransactionLog";
 
 type ProfileRow = { id: string; name: string; phone: string | null; branch: string | null; role: Role };
-type TxnRow = { id: string; type: string; amount: number; balance: number; occurred_at: string };
 
 export default function AdminUsers({
   jumpToUserId,
@@ -32,7 +32,7 @@ export default function AdminUsers({
   const [memberBranch, setMemberBranch] = useState("");
   const [memberNationalId, setMemberNationalId] = useState("");
   const [memberStartDate, setMemberStartDate] = useState("");
-  const [memberTxns, setMemberTxns] = useState<TxnRow[]>([]);
+  const [memberTxns, setMemberTxns] = useState<LogTxn[]>([]);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
   const selectRequestId = useRef(0);
@@ -110,7 +110,7 @@ export default function AdminUsers({
         supabase.from("members").select("branch, national_id, start_date").eq("id", p.id).maybeSingle(),
         supabase
           .from("transactions")
-          .select("id, type, amount, balance, occurred_at")
+          .select("id, type, amount, balance, occurred_at, withdrawal_kind")
           .eq("member_id", p.id)
           .order("occurred_at", { ascending: false }),
       ]);
@@ -121,8 +121,20 @@ export default function AdminUsers({
         setMemberNationalId(memberRes.data.national_id ?? "");
         setMemberStartDate(memberRes.data.start_date);
       }
-      if (txnsRes.data) setMemberTxns(txnsRes.data as TxnRow[]);
+      if (txnsRes.data) setMemberTxns(txnsRes.data as LogTxn[]);
     }
+  };
+
+  // Re-fetch the selected member's log — used after logging a deposit here,
+  // and passed to TransactionLog so an edit/delete made there refreshes it.
+  const reloadMemberTxns = async () => {
+    if (!selected) return;
+    const { data } = await supabase
+      .from("transactions")
+      .select("id, type, amount, balance, occurred_at, withdrawal_kind")
+      .eq("member_id", selected.id)
+      .order("occurred_at", { ascending: false });
+    if (data) setMemberTxns(data as LogTxn[]);
   };
 
   // Landed here from the global search (⌘K) with a specific user to jump
@@ -198,12 +210,7 @@ export default function AdminUsers({
     setDepositNotice(`Logged ${fmt(val)} Ushs for ${selected.name}.`);
     setDepositAmount("2,000");
     setDepositDate(new Date().toISOString().slice(0, 10));
-    const { data } = await supabase
-      .from("transactions")
-      .select("id, type, amount, balance, occurred_at")
-      .eq("member_id", selected.id)
-      .order("occurred_at", { ascending: false });
-    if (data) setMemberTxns(data as TxnRow[]);
+    reloadMemberTxns();
   };
 
   const handleResetPassword = async () => {
@@ -424,71 +431,8 @@ export default function AdminUsers({
                   <p className="hint" style={{ marginBottom: 14 }}>
                     Branch/national ID/start date above update this member&apos;s savings record. Correcting the
                     start date also resets when their interest cycle counts from — it doesn&apos;t reverse
-                    interest already credited under the old date; use the Savings tab for that.
+                    interest already credited under the old date; the savings log below does.
                   </p>
-
-                  <div style={{ borderTop: "1px solid var(--line)", paddingTop: 16, marginBottom: 16 }}>
-                    <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--muted-ink)", marginBottom: 10 }}>
-                      Savings log
-                    </label>
-                    <div style={{ maxHeight: 220, overflowY: "auto", border: "1px solid var(--line)", borderRadius: 10 }}>
-                      {memberTxns.map((t) => (
-                        <div
-                          key={t.id}
-                          style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "8px 12px", fontSize: 13, borderBottom: "1px solid var(--line-soft)" }}
-                        >
-                          <span style={{ color: "var(--muted)" }}>
-                            {new Date(t.occurred_at).toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" })}
-                          </span>
-                          <span
-                            className={`tag ${t.type === "deposit" ? "dep" : t.type === "interest" ? "int" : "wd"}`}
-                            style={{ flexShrink: 0 }}
-                          >
-                            {t.type[0].toUpperCase() + t.type.slice(1)}
-                          </span>
-                          <span
-                            className="mono"
-                            style={{ marginLeft: "auto", flexShrink: 0, color: t.amount < 0 ? "var(--danger)" : "var(--forest)" }}
-                          >
-                            {t.amount < 0 ? "−" : "+"}{fmt(Math.abs(t.amount))}
-                          </span>
-                        </div>
-                      ))}
-                      {memberTxns.length === 0 && (
-                        <div style={{ padding: "10px 12px", fontSize: 13, color: "var(--muted)" }}>No activity yet.</div>
-                      )}
-                    </div>
-                    <p className="hint" style={{ marginTop: 8, marginBottom: 0 }}>
-                      To correct a mistake in this log, use the Savings tab.
-                    </p>
-                  </div>
-
-                  <div style={{ borderTop: "1px solid var(--line)", paddingTop: 16, marginBottom: 16 }}>
-                    <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--muted-ink)", marginBottom: 6 }}>
-                      Log a contribution
-                    </label>
-                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                      <input
-                        className="inline-input mono"
-                        style={{ flex: 1, minWidth: 120 }}
-                        value={depositAmount}
-                        onChange={(e) => setDepositAmount(e.target.value)}
-                      />
-                      <input
-                        type="date"
-                        max={new Date().toISOString().slice(0, 10)}
-                        className="inline-input"
-                        value={depositDate}
-                        onChange={(e) => setDepositDate(e.target.value)}
-                      />
-                      <button className="btn btn-lime" onClick={handleLogDeposit} disabled={loggingDeposit}>
-                        {loggingDeposit ? "Logging…" : "Log deposit"}
-                      </button>
-                    </div>
-                    {depositNotice && (
-                      <p style={{ fontSize: 12.5, marginTop: 10, color: "var(--forest)", fontWeight: 600 }}>{depositNotice}</p>
-                    )}
-                  </div>
                 </>
               )}
 
@@ -540,6 +484,41 @@ export default function AdminUsers({
           )}
         </div>
       </div>
+
+      {selected && isMember && (
+        <div className="panel section-gap">
+          <div className="panel-head">
+            <div>
+              <h3>{selected.name}&apos;s savings log</h3>
+              <p className="hint">Every deposit, withdrawal, and interest credit for this member — edit or delete a row to fix a mistake.</p>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 18 }}>
+            <input
+              className="inline-input mono"
+              style={{ flex: 1, minWidth: 120 }}
+              value={depositAmount}
+              onChange={(e) => setDepositAmount(e.target.value)}
+            />
+            <input
+              type="date"
+              max={new Date().toISOString().slice(0, 10)}
+              className="inline-input"
+              value={depositDate}
+              onChange={(e) => setDepositDate(e.target.value)}
+            />
+            <button className="btn btn-lime" onClick={handleLogDeposit} disabled={loggingDeposit}>
+              {loggingDeposit ? "Logging…" : "Log deposit"}
+            </button>
+          </div>
+          {depositNotice && (
+            <p style={{ fontSize: 12.5, marginTop: -10, marginBottom: 18, color: "var(--forest)", fontWeight: 600 }}>{depositNotice}</p>
+          )}
+
+          <TransactionLog txns={memberTxns} onReload={reloadMemberTxns} maxHeight={480} />
+        </div>
+      )}
     </>
   );
 }

@@ -263,6 +263,16 @@ tbody tr:hover td { background: var(--paper); }
 .inline-input { padding: 11px 13px; border: 1px solid var(--line); border-radius: 11px; font-family: "Inter"; font-size: 16px; background: var(--paper); color: var(--ink); transition: border-color .14s, box-shadow .14s, background .14s; }
 .inline-input:focus { outline: none; border-color: var(--forest); background: #fff; box-shadow: 0 0 0 4px rgba(22, 163, 74, .12); }
 
+.password-input { position: relative; }
+.password-input input { padding-right: 42px; } /* overrides .field input's padding-right; declared after it in the cascade */
+.password-toggle {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  width: 32px; height: 32px; border: none; background: none; border-radius: 8px;
+  color: var(--muted); cursor: pointer; display: grid; place-items: center; transition: .14s;
+}
+.password-toggle svg { width: 18px; height: 18px; }
+.password-toggle:hover { color: var(--forest-deep); background: var(--paper); }
+
 .avatar { width: 32px; height: 32px; border-radius: 9px; background: linear-gradient(150deg,#4ade80,#16a34a); color: #fff; display: inline-grid; place-items: center; font-weight: 600; font-size: 12px; font-family: "Sora"; margin-right: 11px; vertical-align: middle; }
 .uname { display: inline-flex; flex-direction: column; vertical-align: middle; }
 .uname b { font-weight: 600; font-size: 13.5px; }

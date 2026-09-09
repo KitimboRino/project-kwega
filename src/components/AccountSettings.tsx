@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { createClient } from "@/lib/supabase/client";
+import PasswordInput from "@/components/PasswordInput";
 
 export default function AccountSettings() {
   const { user, refreshUser } = useAuth();
@@ -114,11 +115,11 @@ export default function AccountSettings() {
           <div className="form-row">
             <div className="field">
               <label>New password</label>
-              <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Leave blank to keep" />
+              <PasswordInput value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Leave blank to keep" />
             </div>
             <div className="field">
               <label>Confirm password</label>
-              <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
+              <PasswordInput value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
             </div>
           </div>
           <button className="btn btn-primary" onClick={saveSecurity} disabled={securitySaving}>
