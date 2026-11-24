@@ -44,6 +44,9 @@ export default function AdminUsers({
   const [resetNotice, setResetNotice] = useState("");
   const [resetTempPassword, setResetTempPassword] = useState("");
 
+  const [deleting, setDeleting] = useState(false);
+  const [deleteNotice, setDeleteNotice] = useState("");
+
   // Log a contribution against whichever user is currently selected below.
   const [depositAmount, setDepositAmount] = useState("2,000");
   const [depositDate, setDepositDate] = useState(new Date().toISOString().slice(0, 10));
@@ -104,6 +107,7 @@ export default function AdminUsers({
     setResetEmail("");
     setResetNotice("");
     setResetTempPassword("");
+    setDeleteNotice("");
 
     if (p.role === "member") {
       const [memberRes, txnsRes] = await Promise.all([
@@ -232,6 +236,34 @@ export default function AdminUsers({
     setResetNotice(`New password for ${selected.name}${resetEmail.trim() ? ` (signs in as ${resetEmail.trim()} now)` : ""}:`);
     setResetTempPassword(data?.tempPassword ?? "");
     setResetEmail("");
+  };
+
+  const handleDeleteUser = async () => {
+    if (!selected) return;
+    const what = isMember ? "their login, savings record, and entire savings history" : "their login and profile";
+    if (!window.confirm(`Permanently delete ${selected.name}? This removes ${what}. This can't be undone.`)) return;
+    const typed = window.prompt(`Type the name "${selected.name}" to confirm:`);
+    if (typed === null) return;
+    if (typed.trim() !== selected.name.trim()) {
+      setDeleteNotice("Name didn't match — nothing was deleted.");
+      return;
+    }
+    setDeleting(true);
+    setDeleteNotice("");
+    const { error } = await supabase.rpc("admin_delete_user", { p_user_id: selected.id });
+    setDeleting(false);
+    if (error) {
+      setDeleteNotice(error.message);
+      return;
+    }
+    const removedName = selected.name;
+    setSelected(null);
+    setIsMember(false);
+    setMemberTxns([]);
+    setNotice("");
+    setDeleteNotice("");
+    loadProfiles();
+    window.alert(`${removedName} was deleted.`);
   };
 
   const handleCreateAccount = async () => {
@@ -478,6 +510,27 @@ export default function AdminUsers({
                   >
                     {resetTempPassword}
                   </div>
+                )}
+              </div>
+
+              <div style={{ borderTop: "1px solid var(--line)", paddingTop: 16, marginTop: 20 }}>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--muted-ink)", marginBottom: 6 }}>
+                  Delete account
+                </label>
+                <p className="hint" style={{ marginBottom: 10 }}>
+                  Permanently removes this user&apos;s login and profile
+                  {isMember ? ", their savings record, and every transaction in their savings log" : ""}. This can&apos;t be undone.
+                </p>
+                <button
+                  className="btn btn-ghost"
+                  style={{ color: "var(--danger)", borderColor: "var(--danger)" }}
+                  onClick={handleDeleteUser}
+                  disabled={deleting}
+                >
+                  {deleting ? "Deleting…" : `Delete ${selected.name}`}
+                </button>
+                {deleteNotice && (
+                  <p style={{ fontSize: 12.5, marginTop: 10, color: "var(--danger)", fontWeight: 600 }}>{deleteNotice}</p>
                 )}
               </div>
             </>

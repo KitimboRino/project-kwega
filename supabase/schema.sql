@@ -605,3 +605,44 @@ grant execute on function public.admin_delete_transaction(uuid) to authenticated
 
 revoke all on function public.admin_edit_transaction(uuid, timestamptz, bigint) from public;
 grant execute on function public.admin_edit_transaction(uuid, timestamptz, bigint) to authenticated;
+
+-- ------------------------------------------------------------
+-- admin_delete_user — permanently removes an account: the login
+-- (auth.users), profile, savings record, and that member's whole
+-- transaction history (all via ON DELETE CASCADE from auth.users).
+-- Admin-only, can't delete yourself. An officer who still has members
+-- assigned is refused — reassign those members first, otherwise
+-- members.officer_id would be left pointing at nothing. Transactions
+-- this user *logged* for other members are kept, with created_by
+-- cleared, so other members' history isn't lost.
+-- ------------------------------------------------------------
+create or replace function public.admin_delete_user(p_user_id uuid)
+returns void
+language plpgsql security definer set search_path = public as $$
+declare
+  v_assigned int;
+begin
+  if get_my_role() <> 'admin' then
+    raise exception 'Not authorized';
+  end if;
+  if p_user_id = auth.uid() then
+    raise exception 'You can''t delete your own account.';
+  end if;
+  if not exists (select 1 from public.profiles where id = p_user_id) then
+    raise exception 'User not found';
+  end if;
+
+  select count(*) into v_assigned from public.members where officer_id = p_user_id and id <> p_user_id;
+  if v_assigned > 0 then
+    raise exception 'This user is the officer for % member(s). Reassign them to another officer first.', v_assigned;
+  end if;
+
+  update public.transactions set created_by = null
+   where created_by = p_user_id and member_id <> p_user_id;
+
+  delete from auth.users where id = p_user_id;
+end;
+$$;
+
+revoke all on function public.admin_delete_user(uuid) from public;
+grant execute on function public.admin_delete_user(uuid) to authenticated;
